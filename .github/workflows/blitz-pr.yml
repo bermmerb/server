@@ -1,0 +1,68 @@
+name: Blitz PR
+
+# Fork-only workflow (bermmerb/server). Builds and tests every pull request into
+# blitz without publishing anything. The image goes from the build job to the test
+# job as an Actions artifact, which is how LSB's own docker_test.yml expects it for
+# pull_request events. The ruleset on blitz requires the "Blitz PR gate" check, so
+# the weekly upstream sync PR (blitz-sync.yml) only auto-merges after a green test.
+
+on:
+  pull_request:
+    branches:
+      - blitz
+
+concurrency:
+  group: blitz-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    uses: ./.github/workflows/docker_build.yml
+    permissions:
+      contents: read
+      # Must match docker_build.yml's own packages: write, or GitHub refuses to start
+      # the run. Nothing is pushed: publish is not set here. PRs from other forks get
+      # a read-only token from GitHub anyway.
+      packages: write
+    with:
+      os: ubuntu
+      compiler: gcc
+      compiler_version: '15'
+      clang_format_version: '22'
+      build_type: Release
+      save_cache: false
+      upload_artifact: true
+
+  test:
+    name: Test
+    needs: build
+    uses: ./.github/workflows/docker_test.yml
+    permissions:
+      contents: read
+      checks: write
+    with:
+      os: ubuntu
+
+  # The one check the ruleset requires. Its name is ours, so an upstream rename of
+  # the job names inside docker_build.yml or docker_test.yml cannot leave PRs waiting
+  # for a check that never comes. always() (not !cancelled()): a skipped required
+  # check would count as passing.
+  gate:
+    name: Blitz PR gate
+    needs:
+      - build
+      - test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build and test passed
+        env:
+          BUILD: ${{ needs.build.result }}
+          TEST: ${{ needs.test.result }}
+        run: |
+          echo "build=${BUILD} test=${TEST}"
+          [ "${BUILD}" = success ] && [ "${TEST}" = success ]

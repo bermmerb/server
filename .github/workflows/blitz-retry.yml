@@ -1,0 +1,35 @@
+name: Blitz Retry
+
+# Fork-only workflow (bermmerb/server). LSB's docker test (xi_test) fails at random now
+# and then (about 1 run in 8 upstream). Re-run the failed jobs of a Blitz Image or
+# Blitz PR run once, so a flaky test does not hold back a release or the weekly sync.
+# A second failure is left alone: that one is probably real.
+
+on:
+  workflow_run:
+    workflows:
+      - Blitz Image
+      - Blitz PR
+    types:
+      - completed
+
+permissions:
+  actions: write
+
+jobs:
+  retry:
+    name: Re-run failed jobs once
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.run_attempt == 1 &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Re-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          gh run rerun "${RUN_ID}" --failed --repo "${GITHUB_REPOSITORY}"
+          echo "Re-ran the failed jobs of ${RUN_NAME} run ${RUN_ID}" >> "${GITHUB_STEP_SUMMARY}"

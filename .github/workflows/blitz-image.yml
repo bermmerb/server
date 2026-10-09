@@ -1,0 +1,106 @@
+name: Blitz Image
+
+# Fork-only workflow (bermmerb/server). Every push to blitz builds the ubuntu server
+# image with LSB's own reusable docker_build.yml, tests it with LSB's docker_test.yml
+# (dbtool update, xi_test, startup checks), and only then moves the :release tag.
+# The game VM's auto-update follows :release, never :latest (latest is pushed by the
+# build before any test has run).
+#
+# Upstream's Builds/Tests/PR Checks are disabled in this fork (see blitz-guard.yml).
+# Files named blitz-*.yml never exist upstream, so merging LandSandBoat/server never
+# conflicts with them.
+
+on:
+  push:
+    branches:
+      - blitz
+  workflow_dispatch:  # rebuild blitz by hand; other branches are skipped (see the if: below)
+
+concurrency:
+  group: blitz-image
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    # Only blitz is released. A manual run on another branch would publish an untested
+    # image, and a branch named "release" would even overwrite the :release tag.
+    if: github.ref == 'refs/heads/blitz'
+    uses: ./.github/workflows/docker_build.yml
+    permissions:
+      contents: read
+      packages: write
+    with:
+      os: ubuntu
+      compiler: gcc
+      compiler_version: '15'
+      clang_format_version: '22'
+      build_type: Release
+      save_cache: true
+      publish: true
+
+  test:
+    name: Test
+    needs: build
+    uses: ./.github/workflows/docker_test.yml
+    permissions:
+      contents: read
+      checks: write
+    with:
+      os: ubuntu
+
+  promote:
+    name: Promote to release
+    needs: test
+    if: github.ref == 'refs/heads/blitz'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Tag the tested image as release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          short="${GITHUB_SHA::7}"
+
+          # A re-run of an older run (blitz-retry, or by hand) must not move :release
+          # back to an older commit. Only the run for the current tip of blitz promotes.
+          tip=$(gh api "repos/${GITHUB_REPOSITORY}/commits/blitz" --jq .sha)
+          if [ "${tip}" != "${GITHUB_SHA}" ]; then
+            echo "blitz has moved on to ${tip::7}; its own run releases it. Not promoting ${short}." | tee -a "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          # docker_test ran whatever :latest was. Promote only if that is this run's image.
+          tested=$(docker buildx imagetools inspect "${image}:latest" --format '{{json .Manifest}}' | jq -r .digest)
+          built=$(docker buildx imagetools inspect "${image}:sha-${short}" --format '{{json .Manifest}}' | jq -r .digest)
+          if [ -z "${built}" ] || [ "${built}" = null ] || [ "${tested}" != "${built}" ]; then
+            echo "::error::The tested image (:latest ${tested}) is not this run's image (sha-${short} ${built}). Not promoting."
+            exit 1
+          fi
+
+          stamp="release-$(date -u +%Y%m%d)-${short}"
+          docker buildx imagetools create \
+            --tag "${image}:release" \
+            --tag "${image}:${stamp}" \
+            "${image}@${built}"
+          {
+            echo "## Released"
+            echo ""
+            echo "\`${image}:release\` now points at \`sha-${short}\` (${built}, also tagged \`${stamp}\`)."
+            echo "The game VM picks it up on its next auto-update run."
+          } >> "${GITHUB_STEP_SUMMARY}"

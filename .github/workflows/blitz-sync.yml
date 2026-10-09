@@ -1,0 +1,151 @@
+name: Blitz Upstream Sync
+
+# Fork-only workflow (bermmerb/server). Once a week, merge LandSandBoat/server base
+# into a sync/upstream-YYYYMMDD branch and open a pull request into blitz with
+# auto-merge (merge commit only: dbtool needs the upstream commits to stay in history,
+# so never squash or rebase). blitz-pr.yml builds and tests the PR; the ruleset on
+# blitz holds the merge until the "Blitz PR gate" check passes.
+#
+# The run fails (GitHub emails the failure) and leaves the rest to a human when:
+#   - the merge conflicts: the run summary lists the conflicted files;
+#   - upstream adds or renames a workflow file: the PR is opened WITHOUT auto-merge,
+#     because new upstream workflows run in this repo and must be looked at first
+#     (and blitz-guard.yml disables them once merged).
+#
+# BLITZ_SYNC_TOKEN lives in the "upstream-sync" environment, which only the blitz
+# branch may use, so workflows on sync branches or pull requests never see it. It is
+# a fine-grained token for this repo only, with Contents, Pull requests and Workflows
+# read/write. GITHUB_TOKEN cannot push upstream changes to .github/workflows, and PRs
+# it opens do not trigger blitz-pr.yml.
+
+on:
+  schedule:
+    - cron: '0 19 * * 0'  # Sunday 19:00 UTC = Monday 02:00 in Thailand
+  workflow_dispatch:
+
+concurrency:
+  group: blitz-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Sync
+    runs-on: ubuntu-latest
+    environment: upstream-sync
+    env:
+      GH_REPO: ${{ github.repository }}  # gh must act on this fork, never on LandSandBoat/server
+    steps:
+      - name: Check token
+        env:
+          SYNC_TOKEN: ${{ secrets.BLITZ_SYNC_TOKEN }}
+        run: |
+          if [ -z "${SYNC_TOKEN}" ]; then
+            echo "::error::Secret BLITZ_SYNC_TOKEN is missing from the upstream-sync environment"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          ref: blitz
+          fetch-depth: 0
+          filter: blob:none
+          token: ${{ secrets.BLITZ_SYNC_TOKEN }}
+
+      - name: Merge LandSandBoat/server base
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Named "lsb", not "upstream": gh picks a remote called upstream as the repo
+          # to act on.
+          git remote add lsb https://github.com/LandSandBoat/server.git
+          git fetch --filter=blob:none --no-tags lsb base
+
+          if git merge-base --is-ancestor lsb/base HEAD; then
+            echo "blitz already contains LandSandBoat/server base" >> "${GITHUB_STEP_SUMMARY}"
+            echo "result=uptodate" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          behind=$(git rev-list --count HEAD..lsb/base)
+          branch="sync/upstream-$(date -u +%Y%m%d)"
+          git switch -c "${branch}"
+          if ! git merge --no-ff --no-edit \
+              -m "Merge LandSandBoat/server base ($(date -u +%F), ${behind} commits)" lsb/base; then
+            {
+              echo "## Upstream merge conflict"
+              echo ""
+              echo "Merging ${behind} upstream commits into blitz conflicts in:"
+              echo ""
+              git diff --name-only --diff-filter=U | sed 's/^/- /'
+              echo ""
+              echo "Resolve by hand (see BLITZ.md): merge upstream base into a branch from blitz, never rebase."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            git merge --abort
+            echo "result=conflict" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # Workflow files upstream added or renamed since blitz.
+          git diff --name-only --diff-filter=AR HEAD^1 HEAD -- .github/workflows/ > new-workflows.txt
+          git push --force origin "${branch}"
+          {
+            echo "result=merged"
+            echo "branch=${branch}"
+            echo "behind=${behind}"
+            echo "new_workflows=$(wc -l < new-workflows.txt | tr -d ' ')"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Open pull request
+        if: steps.merge.outputs.result == 'merged'
+        env:
+          GH_TOKEN: ${{ secrets.BLITZ_SYNC_TOKEN }}
+          BRANCH: ${{ steps.merge.outputs.branch }}
+          BEHIND: ${{ steps.merge.outputs.behind }}
+          NEW_WORKFLOWS: ${{ steps.merge.outputs.new_workflows }}
+        run: |
+          set -euo pipefail
+          # Only PRs from this repository count. Anyone can open a PR from their own
+          # fork with a branch named sync/upstream-..., and those must be ignored.
+          ours='.[] | select(.isCrossRepository | not)'
+
+          # Close older sync PRs that this one replaces.
+          gh pr list --base blitz --state open --limit 100 --json number,headRefName,isCrossRepository \
+            --jq "${ours} | select(.headRefName | startswith(\"sync/upstream-\")) | select(.headRefName != \"${BRANCH}\") | .number" |
+          while read -r old; do
+            gh pr close "${old}" --delete-branch --comment "Replaced by ${BRANCH}."
+          done
+
+          pr=$(gh pr list --base blitz --state open --limit 100 --json number,headRefName,isCrossRepository \
+            --jq "${ours} | select(.headRefName == \"${BRANCH}\") | .number" | head -n1)
+          if [ -z "${pr}" ]; then
+            pr=$(gh pr create --base blitz --head "${BRANCH}" \
+              --title "Merge LandSandBoat/server base (${BEHIND} commits)" \
+              --body "Automatic weekly sync from LandSandBoat/server base. Merges itself once the Blitz PR gate check passes, unless upstream added new workflow files.")
+          fi
+
+          if [ "${NEW_WORKFLOWS}" != 0 ]; then
+            {
+              echo "## Needs review: upstream added or renamed workflow files"
+              echo ""
+              sed 's/^/- /' new-workflows.txt
+              echo ""
+              echo "Auto-merge is OFF for ${pr}. Check these files, merge the PR by hand (merge commit),"
+              echo "then make sure Blitz Guard disabled them."
+            } >> "${GITHUB_STEP_SUMMARY}"
+            echo "::error::Upstream added or renamed workflow files; ${pr} needs a manual review"
+            exit 1
+          fi
+
+          gh pr merge "${pr}" --auto --merge
+          echo "Opened ${pr} (${BEHIND} upstream commits), auto-merge on." >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Fail on conflict
+        if: steps.merge.outputs.result == 'conflict'
+        run: |
+          echo "::error::Upstream merge conflict, see the run summary"
+          exit 1

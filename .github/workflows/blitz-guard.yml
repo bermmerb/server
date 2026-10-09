@@ -1,0 +1,38 @@
+name: Blitz Guard
+
+# Fork-only workflow (bermmerb/server). Disabling a workflow in the Actions UI only
+# covers files that already exist, and upstream adds new workflow files from time to
+# time. Whenever workflow files change on blitz, disable every active workflow except
+# ours (blitz-*.yml) and the reusable ones they call.
+
+on:
+  push:
+    branches:
+      - blitz
+    paths:
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  guard:
+    name: Disable upstream workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disable everything not on the keep list
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          keep='^\.github/workflows/(blitz-[^/]+|docker_build|docker_test|runner_build|runner_test)\.ya?ml$'
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows" --paginate \
+            --jq '.workflows[] | select(.state == "active") | "\(.id) \(.path)"' |
+          while read -r id path; do
+            case "${path}" in .github/workflows/*) ;; *) continue ;; esac
+            if [[ ! "${path}" =~ ${keep} ]]; then
+              gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/${id}/disable"
+              echo "Disabled ${path}" | tee -a "${GITHUB_STEP_SUMMARY}"
+            fi
+          done
