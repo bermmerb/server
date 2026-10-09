@@ -741,7 +741,7 @@ void IPCClient::handleMessage_LinkshellRemove(const IPP& ipp, const ipc::Linkshe
 
     if (PChar && PChar->PLinkshell1 && PChar->PLinkshell1->getID() == message.linkshellId)
     {
-        CItemLinkshell* targetLS = (CItemLinkshell*)PChar->getEquip(SLOT_LINK1);
+        CItemLinkshell* targetLS = PChar->getLinkshell(SLOT_LINK1);
         if (targetLS && (message.requesterRank == LSTYPE_LINKSHELL || (message.requesterRank == LSTYPE_PEARLSACK && targetLS->GetLSType() == LSTYPE_LINKPEARL)))
         {
             PChar->PLinkshell1->RemoveMemberByName(message.victimName, message.requesterRank);
@@ -749,7 +749,7 @@ void IPCClient::handleMessage_LinkshellRemove(const IPP& ipp, const ipc::Linkshe
     }
     else if (PChar && PChar->PLinkshell2 && PChar->PLinkshell2->getID() == message.linkshellId)
     {
-        CItemLinkshell* targetLS = (CItemLinkshell*)PChar->getEquip(SLOT_LINK2);
+        CItemLinkshell* targetLS = PChar->getLinkshell(SLOT_LINK2);
         if (targetLS && (message.requesterRank == LSTYPE_LINKSHELL || (message.requesterRank == LSTYPE_PEARLSACK && targetLS->GetLSType() == LSTYPE_LINKPEARL)))
         {
             PChar->PLinkshell2->RemoveMemberByName(message.victimName, message.requesterRank);
@@ -875,7 +875,8 @@ void IPCClient::handleMessage_EntityInformationRequest(const IPP& ipp, const ipc
 
         const bool shouldWarp = message.warp && isSpawned;
 
-        const auto moghouseId = PEntity->objtype == TYPE_PC ? static_cast<CCharEntity*>(PEntity)->m_moghouseID : 0;
+        const auto* PChar      = dynamic_cast<const CCharEntity*>(PEntity);
+        const auto  moghouseId = PChar ? PChar->m_moghouseID : 0;
 
         message::send(ipc::EntityInformationResponse{
             .requesterId = message.requesterId,

@@ -68,6 +68,11 @@ void GP_CLI_COMMAND_ITEM_TRANSFER::process(MapSession* PSession, CCharEntity* PC
         return;
     }
 
+    if (PChar->inMogHouse(xi::MogHouse::Visiting))
+    {
+        return;
+    }
+
     // Only allow trading with mobs if it's status is an NPC
     if (PNpc->objtype == TYPE_MOB && PNpc->status != xi::Status::Normal)
     {
@@ -110,7 +115,7 @@ void GP_CLI_COMMAND_ITEM_TRANSFER::process(MapSession* PSession, CCharEntity* PC
             return;
         }
 
-        if (std::find(tradeItems.begin(), tradeItems.begin() + slotId, PItem) != tradeItems.begin() + slotId)
+        if (std::ranges::contains(tradeItems.begin(), tradeItems.begin() + slotId, PItem))
         {
             ShowErrorFmt("GP_CLI_COMMAND_ITEM_TRANSFER: {} trying to trade NPC {} with duplicate inventory slot {}!", PChar->getName(), PNpc->getName(), invSlotId);
             return;

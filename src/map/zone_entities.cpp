@@ -39,6 +39,7 @@
 #include <common/types/hash_map.h>
 #include <common/types/heap.h>
 
+#include <algorithm>
 #include <tuple>
 
 #include "ai/ai_container.h"
@@ -532,6 +533,9 @@ void CZoneEntities::DecreaseZoneCounter(CCharEntity* PChar)
 
     battleutils::RelinquishClaim(PChar);
 
+    // Any zone out closes the Mog House, floor changes and logouts included
+    PChar->moghouse().close();
+
     // Remove pets
     if (PChar->PPet != nullptr)
     {
@@ -667,7 +671,7 @@ void CZoneEntities::AssignDynamicTargIDandLongID(CBaseEntity* PEntity)
     uint16 counter = 0;
 
     // Find next available targid, starting with the computed one above.
-    while (std::find(m_dynamicTargIds.begin(), m_dynamicTargIds.end(), targid) != m_dynamicTargIds.end())
+    while (std::ranges::contains(m_dynamicTargIds, targid))
     {
         ++targid;
 
@@ -914,7 +918,7 @@ void CZoneEntities::syncSpawnListWithGrid(CCharEntity*                     PChar
             return;
         }
 
-        if (spawnList.find(entity->id) != spawnList.end())
+        if (spawnList.contains(entity->id))
         {
             if (onUpdate)
             {
@@ -1091,7 +1095,7 @@ void CZoneEntities::SpawnPCs(CCharEntity* PChar)
         }
 
         CBaseEntity* PTarget = PState->target().resolve();
-        if (PTarget && PTarget->objtype == TYPE_PC && PTarget->id != PChar->id)
+        if (PTarget && dynamic_cast<const CCharEntity*>(PTarget) != nullptr && PTarget->id != PChar->id)
         {
             scoreBonus[PTarget->id] += CHARACTER_SYNC_DISTANCE_SWAP_THRESHOLD;
         }
@@ -1153,7 +1157,7 @@ void CZoneEntities::SpawnPCs(CCharEntity* PChar)
 
     const auto considerCandidate = [&](CCharEntity* PCurrentChar)
     {
-        if (PCurrentChar != nullptr && PChar != PCurrentChar && PChar->SpawnPCList.find(PCurrentChar->id) == PChar->SpawnPCList.end())
+        if (PCurrentChar != nullptr && PChar != PCurrentChar && !PChar->SpawnPCList.contains(PCurrentChar->id))
         {
             if (PCurrentChar->m_isGMHidden || PChar->m_moghouseID != PCurrentChar->m_moghouseID)
             {
@@ -1193,9 +1197,9 @@ void CZoneEntities::SpawnPCs(CCharEntity* PChar)
         CHARACTER_SYNC_DISTANCE,
         [&](CBaseEntity* entity)
         {
-            if (entity->objtype == TYPE_PC)
+            if (auto* PChar = dynamic_cast<CCharEntity*>(entity))
             {
-                considerCandidate(static_cast<CCharEntity*>(entity));
+                considerCandidate(PChar);
             }
         });
 
@@ -1207,7 +1211,7 @@ void CZoneEntities::SpawnPCs(CCharEntity* PChar)
         {
             candidates.emplace_back(candidateCharacters.pop());
         }
-        std::reverse(candidates.begin(), candidates.end());
+        std::ranges::reverse(candidates);
 
         // Track how many characters have been spawned/despawned this check and limit it to avoid flooding the client
         uint8 swapCount = 0;
@@ -1258,24 +1262,16 @@ void CZoneEntities::SpawnConditionalNPCs(CCharEntity* PChar)
 {
     TracyZoneScoped;
 
-    // Player information
-    const bool inMogHouse       = PChar->inMogHouse();
-    const bool inMHinHomeNation = inMogHouse && [&]()
+    auto* POwner = PChar->moghouse().host();
+    if (POwner == nullptr)
     {
-        switch (zoneutils::GetCurrentRegion(PChar->getZone()))
-        {
-            case REGION_TYPE::SANDORIA:
-                return PChar->profile.nation == NATION_SANDORIA;
-            case REGION_TYPE::BASTOK:
-                return PChar->profile.nation == NATION_BASTOK;
-            case REGION_TYPE::WINDURST:
-                return PChar->profile.nation == NATION_WINDURST;
-            default:
-                return false;
-        }
-    }();
-    const bool onMH2F            = PChar->profile.mhflag & 0x40;
-    const bool orchestrionPlaced = charutils::isOrchestrionPlaced(PChar);
+        POwner = PChar;
+    }
+
+    const bool inMogHouse        = PChar->inMogHouse();
+    const bool inMHinHomeNation  = inMogHouse && charutils::IsHomeNation(POwner->profile.nation, zoneutils::GetCurrentRegion(PChar->getZone()));
+    const bool onMH2F            = POwner->profile.mhflag & 0x40;
+    const bool orchestrionPlaced = charutils::isOrchestrionPlaced(POwner);
 
     // NOTE: We're not changing the NPC's status to NORMAL here, because we don't want them to be visible to all players.
     //     : We're sending updates AS IF they were visible, but only to this current player based on their conditions.
@@ -1453,9 +1449,8 @@ void CZoneEntities::UpdateEntityPacket(CBaseEntity* PEntity, ENTITYUPDATE type, 
     TracyZoneScopedN("CZoneEntities::UpdateEntityPacket");
 
     // Do not send packets that are updates of a hidden GM
-    if (PEntity->objtype == TYPE_PC)
+    if (auto* PChar = dynamic_cast<CCharEntity*>(PEntity))
     {
-        auto* PChar = static_cast<CCharEntity*>(PEntity);
         if (PChar->m_isGMHidden && type != ENTITY_DESPAWN)
         {
             return;
@@ -1480,12 +1475,11 @@ void CZoneEntities::UpdateEntityPacket(CBaseEntity* PEntity, ENTITYUPDATE type, 
             ENTITY_RENDER_DISTANCE,
             [&](CBaseEntity* candidate)
             {
-                if (candidate->objtype != TYPE_PC || candidate == PEntity)
+                auto* PCurrentChar = dynamic_cast<CCharEntity*>(candidate);
+                if (!PCurrentChar || PCurrentChar == PEntity)
                 {
                     return;
                 }
-
-                auto* PCurrentChar = static_cast<CCharEntity*>(candidate);
                 if (charutils::hasEntitySpawned(PCurrentChar, PEntity))
                 {
                     PCurrentChar->updateEntityPacket(PEntity, type, updatemask);
@@ -1519,13 +1513,13 @@ void CZoneEntities::PushPacket(CBaseEntity* PEntity, GLOBAL_MESSAGE_TYPE message
         return;
     }
 
-    // Do not send packets that are updates of a hidden GM..
-    if (packet->getType() == 0x00D && PEntity != nullptr && PEntity->objtype == TYPE_PC)
-    {
-        auto* PChar = static_cast<CCharEntity*>(PEntity);
+    const auto* PSourceChar = dynamic_cast<const CCharEntity*>(PEntity);
 
+    // Do not send packets that are updates of a hidden GM..
+    if (packet->getType() == 0x00D && PSourceChar)
+    {
         // Ensure this packet is not despawning us..
-        if (PChar->m_isGMHidden && packet->ref<uint8>(0x0A) != 0x20)
+        if (PSourceChar->m_isGMHidden && packet->ref<uint8>(0x0A) != 0x20)
         {
             return;
         }
@@ -1557,7 +1551,7 @@ void CZoneEntities::PushPacket(CBaseEntity* PEntity, GLOBAL_MESSAGE_TYPE message
                     if (PEntity != PCurrentChar)
                     {
                         if (isWithinDistance(PEntity->loc.p, PCurrentChar->loc.p, checkDistance) &&
-                            (PEntity->objtype != TYPE_PC || static_cast<CCharEntity*>(PEntity)->m_moghouseID == PCurrentChar->m_moghouseID))
+                            (!PSourceChar || PSourceChar->m_moghouseID == PCurrentChar->m_moghouseID))
                         {
                             uint16 packetType = packet->getType();
                             if
@@ -1598,7 +1592,7 @@ void CZoneEntities::PushPacket(CBaseEntity* PEntity, GLOBAL_MESSAGE_TYPE message
 
                                 auto pushPacketIfInSpawnList = [&](CCharEntity* PChar, SpawnIDList_t const& spawnlist)
                                 {
-                                    if (spawnlist.find(id) != spawnlist.end())
+                                    if (spawnlist.contains(id))
                                     {
                                         PChar->pushPacket(packet->copy());
                                     }
@@ -1642,7 +1636,7 @@ void CZoneEntities::PushPacket(CBaseEntity* PEntity, GLOBAL_MESSAGE_TYPE message
                     if (PEntity != PCurrentChar)
                     {
                         if (distance(PEntity->loc.p, PCurrentChar->loc.p) < 180.0f &&
-                            (PEntity->objtype != TYPE_PC || static_cast<CCharEntity*>(PEntity)->m_moghouseID == PCurrentChar->m_moghouseID))
+                            (!PSourceChar || PSourceChar->m_moghouseID == PCurrentChar->m_moghouseID))
                         {
                             PCurrentChar->pushPacket(packet->copy());
                         }
@@ -1745,7 +1739,7 @@ auto CZoneEntities::mobTick(CMobEntity* PMob, timer::time_point tick) -> Task<vo
                 PChar->PClaimedMob = nullptr;
             }
 
-            if (PChar->SpawnMOBList.find(PMob->id) != PChar->SpawnMOBList.end())
+            if (PChar->SpawnMOBList.contains(PMob->id))
             {
                 PChar->SpawnMOBList.erase(PMob->id);
             }
@@ -1814,7 +1808,7 @@ auto CZoneEntities::npcTick(CNpcEntity* PNpc, timer::time_point tick) -> Task<vo
     {
         FOR_EACH_PAIR_CAST_SECOND(CCharEntity*, PChar, m_charList)
         {
-            if (PChar->SpawnNPCList.find(PNpc->id) != PChar->SpawnNPCList.end())
+            if (PChar->SpawnNPCList.contains(PNpc->id))
             {
                 PChar->SpawnNPCList.erase(PNpc->id);
             }
@@ -1849,7 +1843,7 @@ auto CZoneEntities::petTick(CPetEntity* PPet, timer::time_point tick) -> Task<vo
 
         FOR_EACH_PAIR_CAST_SECOND(CCharEntity*, PChar, m_charList)
         {
-            if (PChar->SpawnPETList.find(PPet->id) != PChar->SpawnPETList.end())
+            if (PChar->SpawnPETList.contains(PPet->id))
             {
                 PChar->SpawnPETList.erase(PPet->id);
             }
@@ -1898,7 +1892,7 @@ auto CZoneEntities::trustTick(CTrustEntity* PTrust, timer::time_point tick) -> T
 
         FOR_EACH_PAIR_CAST_SECOND(CCharEntity*, PChar, m_charList)
         {
-            if (PChar->SpawnTRUSTList.find(PTrust->id) != PChar->SpawnTRUSTList.end())
+            if (PChar->SpawnTRUSTList.contains(PTrust->id))
             {
                 PChar->SpawnTRUSTList.erase(PTrust->id);
             }
