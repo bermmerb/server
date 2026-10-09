@@ -111,8 +111,10 @@
 
 #include <common/types/hash_map.h>
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
+#include <functional>
 #include <limits>
 #include <ranges>
 #include <string>
@@ -1094,7 +1096,7 @@ sol::table GetLuaObjectFromFilename(const std::string& filename)
         parts.emplace_back(part.string());
     }
 
-    auto it = std::find(parts.begin(), parts.end(), "scripts");
+    auto it = std::ranges::find(parts, "scripts");
     if (it == parts.end())
     {
         ShowError("luautils::GetLuaObjectFromFilename: Invalid filename: %s", filename);
@@ -1208,13 +1210,7 @@ void LoadExpDifficultyCurves(const sol::table& expToDifficultyTable, const uint8
     }
 
     // Sort highest to lowest
-    std::sort(
-        expDifficultyTable.begin(),
-        expDifficultyTable.end(),
-        [](const std::pair<uint16, EMobDifficulty>& a, const std::pair<uint16, EMobDifficulty>& b)
-        {
-            return a.first > b.first;
-        });
+    std::ranges::sort(expDifficultyTable, std::greater{}, &std::pair<uint16, EMobDifficulty>::first);
 
     std::pair<uint16, uint8> iep = { incrediblyEasyPreyLevel, incrediblyEasyPreyMinExp };
 
@@ -1373,7 +1369,7 @@ void PopulateIDLookups(const xi::ZoneId zoneId, const std::string& zoneName, con
         "GetFirstID",
         [&](const std::string& name) -> Maybe<uint32>
         {
-            if (lookup.find(name) != lookup.end())
+            if (lookup.contains(name))
             {
                 return lookup[name].front();
             }
@@ -1391,13 +1387,13 @@ void PopulateIDLookups(const xi::ZoneId zoneId, const std::string& zoneName, con
         [&](const std::string& name) -> sol::table
         {
             // Is it already built and cached: return it
-            if (idLuaTables.find(name) != idLuaTables.end())
+            if (idLuaTables.contains(name))
             {
                 return idLuaTables[name];
             }
 
             // If we have no entries, bail out and return nil
-            if (lookup.find(name) == lookup.end())
+            if (!lookup.contains(name))
             {
                 ShowError(fmt::format("GetTableOfIDs({}) in zone {}: Returning nil", name, zoneName));
                 return sol::lua_nil;
@@ -2922,7 +2918,7 @@ int32 additionalEffectAttack(CBattleEntity* PAttacker, CBattleEntity* PDefender,
     TracyZoneScoped;
 
     sol::function additionalEffectAttack;
-    if (PAttacker->objtype == TYPE_PC)
+    if (dynamic_cast<const CCharEntity*>(PAttacker) != nullptr)
     {
         additionalEffectAttack = lua[sol::create_if_nil]["xi"]["additionalEffect"]["attack"];
     }
@@ -3305,7 +3301,7 @@ void CheckForGearSet(CBaseEntity* PTarget)
     }
 }
 
-int32 OnSpellCast(CBattleEntity* PCaster, CBattleEntity* PTarget, CSpell* PSpell)
+int32 OnSpellCast(CBattleEntity* PCaster, CBattleEntity* PTarget, CSpell* PSpell, action_t* action)
 {
     TracyZoneScoped;
 
@@ -3321,7 +3317,7 @@ int32 OnSpellCast(CBattleEntity* PCaster, CBattleEntity* PTarget, CSpell* PSpell
         return 0;
     }
 
-    auto result = onSpellCast(PCaster, PTarget, PSpell);
+    auto result = onSpellCast(PCaster, PTarget, PSpell, action);
     if (!result.valid())
     {
         sol::error err = result;
@@ -3338,7 +3334,7 @@ void OnSpellPrecast(CBattleEntity* PCaster, CSpell* PSpell)
 {
     TracyZoneScoped;
 
-    if (PCaster->objtype == TYPE_PC)
+    if (dynamic_cast<const CCharEntity*>(PCaster) != nullptr)
     {
         return;
     }
@@ -3362,7 +3358,7 @@ void OnSpellCastStart(CBattleEntity* PCaster, CBattleEntity* PTarget, CSpell* PS
 {
     TracyZoneScoped;
 
-    if (PCaster->objtype == TYPE_PC)
+    if (dynamic_cast<const CCharEntity*>(PCaster) != nullptr)
     {
         return;
     }
@@ -3658,7 +3654,7 @@ void OnPath(CBaseEntity* PEntity)
 {
     TracyZoneScoped;
 
-    if (PEntity == nullptr || PEntity->objtype == TYPE_PC)
+    if (PEntity == nullptr || dynamic_cast<const CCharEntity*>(PEntity) != nullptr)
     {
         return;
     }
@@ -3681,7 +3677,7 @@ void OnPathPoint(CBaseEntity* PEntity)
 {
     TracyZoneScoped;
 
-    if (PEntity == nullptr || PEntity->objtype == TYPE_PC)
+    if (PEntity == nullptr || dynamic_cast<const CCharEntity*>(PEntity) != nullptr)
     {
         return;
     }
@@ -3704,7 +3700,7 @@ void OnPathComplete(CBaseEntity* PEntity)
 {
     TracyZoneScoped;
 
-    if (PEntity == nullptr || PEntity->objtype == TYPE_PC)
+    if (PEntity == nullptr || dynamic_cast<const CCharEntity*>(PEntity) != nullptr)
     {
         return;
     }
@@ -3720,6 +3716,24 @@ void OnPathComplete(CBaseEntity* PEntity)
     {
         sol::error err = result;
         ShowError("luautils::OnPathComplete: %s", err.what());
+    }
+}
+
+void OnShopBuy(CCharEntity* PChar, CBaseEntity* PNpc, uint16 itemId, uint32 quantity, uint32 gil)
+{
+    TracyZoneScoped;
+
+    sol::function onShopBuy = getEntityCachedFunction(PNpc, "onShopBuy");
+    if (!onShopBuy.valid())
+    {
+        return;
+    }
+
+    auto result = onShopBuy(PChar, PNpc, itemId, quantity, gil);
+    if (!result.valid())
+    {
+        sol::error err = result;
+        ShowError("luautils::OnShopBuy: %s", err.what());
     }
 }
 
@@ -3815,10 +3829,10 @@ void OnMobEngage(CBaseEntity* PMob, CBaseEntity* PTarget)
         filename = fmt::format("./scripts/zones/{}/mobs/{}.lua", PMob->loc.zone->getName(), PMob->getName());
     }
 
-    if (PTarget->objtype == TYPE_PC)
+    if (auto* PChar = dynamic_cast<CCharEntity*>(PTarget))
     {
-        ((CCharEntity*)PTarget)->eventPreparation->targetEntity = PMob;
-        ((CCharEntity*)PTarget)->eventPreparation->scriptFile   = filename;
+        PChar->eventPreparation->targetEntity = PMob;
+        PChar->eventPreparation->scriptFile   = filename;
     }
 
     sol::function onMobEngage = getEntityCachedFunction(PMob, "onMobEngage");
@@ -4822,9 +4836,8 @@ int32 OnPetAbility(CBaseEntity* PTarget, CBaseEntity* PMob, CMobSkill* PMobSkill
     if (PMob->objtype == TYPE_PET && settings::get<bool>("map.SKILLUP_BLOODPACT"))
     {
         CPetEntity* PPet = (CPetEntity*)PMob;
-        if (PPet->getPetType() == PET_TYPE::AVATAR && PPet->PMaster->objtype == TYPE_PC)
+        if (auto* PMaster = dynamic_cast<CCharEntity*>(PPet->PMaster); PPet->getPetType() == PET_TYPE::AVATAR && PMaster)
         {
-            CCharEntity* PMaster = (CCharEntity*)PPet->PMaster;
             if (PMaster->GetMJob() == xi::Job::SMN)
             {
                 charutils::TrySkillUP(PMaster, xi::SkillType::SummoningMagic, PMaster->GetMLevel());
@@ -4855,9 +4868,8 @@ int32 OnPetAbility(CBaseEntity* PTarget, CPetEntity* PPet, CPetSkill* PPetSkill,
         return 0;
     }
 
-    if (PPet->getPetType() == PET_TYPE::AVATAR && PPet->PMaster->objtype == TYPE_PC)
+    if (auto* PMaster = dynamic_cast<CCharEntity*>(PPet->PMaster); PPet->getPetType() == PET_TYPE::AVATAR && PMaster)
     {
-        CCharEntity* PMaster = (CCharEntity*)PPet->PMaster;
         if (PMaster->GetMJob() == xi::Job::SMN)
         {
             charutils::TrySkillUP(PMaster, xi::SkillType::SummoningMagic, PMaster->GetMLevel());
@@ -5302,6 +5314,26 @@ void OnTransportEvent(CCharEntity* PChar, xi::ZoneId prevZoneId, std::string_vie
     {
         sol::error err = result;
         ShowError("luautils::onTransportEvent: %s", err.what());
+    }
+}
+
+void OnTransportVoyageEnd(CZone* PZone)
+{
+    TracyZoneScoped;
+
+    auto name = PZone->getName();
+
+    auto onTransportVoyageEnd = lua["xi"]["zones"][name]["Zone"]["onTransportVoyageEnd"];
+    if (!onTransportVoyageEnd.valid())
+    {
+        return;
+    }
+
+    auto result = onTransportVoyageEnd(PZone);
+    if (!result.valid())
+    {
+        sol::error err = result;
+        ShowError("luautils::onTransportVoyageEnd: %s", err.what());
     }
 }
 
@@ -5882,16 +5914,18 @@ void HandleCustomMenu(CCharEntity* PChar, const std::string& selection)
         "\x3A\x20\x52\x65\x73\x75\x6C\x74\x20\x28\x43\x61\x6E\x63\x65\x6C\x65\x64\x20\x64\x75\x65\x20\x74\x6F\x20\x65\x76\x65\x6E\x74\x20\x61\x63\x74\x69\x76\x61\x74\x69\x6F\x6E\x2E\x29",
     };
 
-    const auto wasCancelled = std::any_of(
-        cancelMsgs.begin(), cancelMsgs.end(), [&selection](const auto& s)
+    const auto wasCancelled = std::ranges::any_of(
+        cancelMsgs,
+        [&selection](const auto& s)
         {
-            return selection.find(s) != selection.npos;
+            return selection.contains(s);
         });
 
-    const auto wasCancelledEvent = std::any_of(
-        eventCancelMsgs.begin(), eventCancelMsgs.end(), [&selection](const auto& s)
+    const auto wasCancelledEvent = std::ranges::any_of(
+        eventCancelMsgs,
+        [&selection](const auto& s)
         {
-            return selection.find(s) != selection.npos;
+            return selection.contains(s);
         });
 
     const auto context = customMenuContext[PChar->id];
@@ -6393,7 +6427,7 @@ auto GetSynergyRecipeByTrade(CLuaTradeContainer luaTradeContainer) -> sol::table
     }
 
     // We will sort now, because we want to insert zeroes at the end of the vector for lookup
-    std::sort(itemIds.begin(), itemIds.end());
+    std::ranges::sort(itemIds);
 
     // We will still need to fill out the call to GetSynergyRecipeByIngredients
     // with zeroes for empty slots.

@@ -25,6 +25,7 @@
 #include "common/timer.h"
 #include "common/utils.h"
 
+#include <algorithm>
 #include <cstring>
 
 #include "enums/item_lockflg.h"
@@ -78,6 +79,7 @@
 #include "item_container.h"
 #include "items/item_equipment.h"
 #include "items/item_furnishing.h"
+#include "items/item_linkshell.h"
 #include "items/item_usable.h"
 #include "items/item_weapon.h"
 #include "items/transactions/npc_trade.h"
@@ -135,24 +137,24 @@ CCharEntity::CCharEntity()
     Container      = new CTradeContainer();
     UContainer     = new CUContainer();
 
-    m_Inventory  = std::make_unique<CItemContainer>(LOC_INVENTORY);
-    m_Mogsafe    = std::make_unique<CItemContainer>(LOC_MOGSAFE);
-    m_Storage    = std::make_unique<CItemContainer>(LOC_STORAGE);
-    m_Tempitems  = std::make_unique<CItemContainer>(LOC_TEMPITEMS);
-    m_Moglocker  = std::make_unique<CItemContainer>(LOC_MOGLOCKER);
-    m_Mogsatchel = std::make_unique<CItemContainer>(LOC_MOGSATCHEL);
-    m_Mogsack    = std::make_unique<CItemContainer>(LOC_MOGSACK);
-    m_Mogcase    = std::make_unique<CItemContainer>(LOC_MOGCASE);
-    m_Wardrobe   = std::make_unique<CItemContainer>(LOC_WARDROBE);
-    m_Mogsafe2   = std::make_unique<CItemContainer>(LOC_MOGSAFE2);
-    m_Wardrobe2  = std::make_unique<CItemContainer>(LOC_WARDROBE2);
-    m_Wardrobe3  = std::make_unique<CItemContainer>(LOC_WARDROBE3);
-    m_Wardrobe4  = std::make_unique<CItemContainer>(LOC_WARDROBE4);
-    m_Wardrobe5  = std::make_unique<CItemContainer>(LOC_WARDROBE5);
-    m_Wardrobe6  = std::make_unique<CItemContainer>(LOC_WARDROBE6);
-    m_Wardrobe7  = std::make_unique<CItemContainer>(LOC_WARDROBE7);
-    m_Wardrobe8  = std::make_unique<CItemContainer>(LOC_WARDROBE8);
-    m_RecycleBin = std::make_unique<CItemContainer>(LOC_RECYCLEBIN);
+    m_Inventory  = std::make_unique<CItemContainer>(LOC_INVENTORY, this);
+    m_Mogsafe    = std::make_unique<CItemContainer>(LOC_MOGSAFE, this);
+    m_Storage    = std::make_unique<CItemContainer>(LOC_STORAGE, this);
+    m_Tempitems  = std::make_unique<CItemContainer>(LOC_TEMPITEMS, this);
+    m_Moglocker  = std::make_unique<CItemContainer>(LOC_MOGLOCKER, this);
+    m_Mogsatchel = std::make_unique<CItemContainer>(LOC_MOGSATCHEL, this);
+    m_Mogsack    = std::make_unique<CItemContainer>(LOC_MOGSACK, this);
+    m_Mogcase    = std::make_unique<CItemContainer>(LOC_MOGCASE, this);
+    m_Wardrobe   = std::make_unique<CItemContainer>(LOC_WARDROBE, this);
+    m_Mogsafe2   = std::make_unique<CItemContainer>(LOC_MOGSAFE2, this);
+    m_Wardrobe2  = std::make_unique<CItemContainer>(LOC_WARDROBE2, this);
+    m_Wardrobe3  = std::make_unique<CItemContainer>(LOC_WARDROBE3, this);
+    m_Wardrobe4  = std::make_unique<CItemContainer>(LOC_WARDROBE4, this);
+    m_Wardrobe5  = std::make_unique<CItemContainer>(LOC_WARDROBE5, this);
+    m_Wardrobe6  = std::make_unique<CItemContainer>(LOC_WARDROBE6, this);
+    m_Wardrobe7  = std::make_unique<CItemContainer>(LOC_WARDROBE7, this);
+    m_Wardrobe8  = std::make_unique<CItemContainer>(LOC_WARDROBE8, this);
+    m_RecycleBin = std::make_unique<CItemContainer>(LOC_RECYCLEBIN, this);
 
     keys = {};
 
@@ -318,14 +320,11 @@ CCharEntity::~CCharEntity()
             }
             if (PParty->GetSyncTarget() != nullptr)
             {
-                uint8 count = 0;
-                for (uint32 i = 0; i < PParty->members.size(); ++i)
-                {
-                    if (PParty->members.at(i) != this && PParty->members.at(i)->getZone() == PParty->GetSyncTarget()->getZone())
-                    {
-                        count++;
-                    }
-                }
+                const auto count = static_cast<uint8>(std::ranges::count_if(PParty->members,
+                                                                            [&](const auto* member)
+                                                                            {
+                                                                                return member != this && member->getZone() == PParty->GetSyncTarget()->getZone();
+                                                                            }));
                 if (count < 2) // 3, because one is zoning out - thus at least 2 will be left
                 {
                     PParty->SetSyncTarget("", MsgStd::LevelSyncRemoveTooFewMembers);
@@ -446,15 +445,7 @@ void CCharEntity::updateEntityPacket(CBaseEntity* PEntity, ENTITYUPDATE type, ui
     auto       itr              = EntityUpdatePackets.find(PEntity->id);
     const bool hasPendingPacket = itr != EntityUpdatePackets.end() && itr->second != nullptr;
 
-    auto* PChar = [&]() -> CCharEntity*
-    {
-        if (PEntity->objtype == TYPE_PC)
-        {
-            return static_cast<CCharEntity*>(PEntity);
-        }
-
-        return nullptr;
-    }();
+    auto* PChar = dynamic_cast<CCharEntity*>(PEntity);
 
     if (hasPendingPacket)
     {
@@ -560,6 +551,20 @@ bool CCharEntity::isAway() const
 bool CCharEntity::hasAutoTargetEnabled() const
 {
     return !playerConfig.AutoTargetOffFlg;
+}
+
+auto CCharEntity::heldSlots(const uint8 location) const -> uint8
+{
+    uint8 held = 0;
+    for (const auto& transaction : transactions_)
+    {
+        if (transaction->isOpen())
+        {
+            held += transaction->heldSlots(location);
+        }
+    }
+
+    return held;
 }
 
 auto CCharEntity::isCrafting() const -> bool
@@ -754,14 +759,7 @@ auto CCharEntity::getAutomatonAttachment(const uint8 slotid) const -> uint8
 
 auto CCharEntity::hasAutomatonAttachment(const uint8 attachment) const -> bool
 {
-    for (auto&& attachmentid : automatonInfo_.equip.attachments)
-    {
-        if (attachmentid == attachment)
-        {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::contains(automatonInfo_.equip.attachments, attachment);
 }
 
 auto CCharEntity::getAutomatonElementMax(const uint8 element) const -> uint8
@@ -849,9 +847,28 @@ void CCharEntity::setLastProposalCloseTime(timer::time_point t)
     lastProposalCloseTime_ = t;
 }
 
-auto CCharEntity::inMogHouse() const -> bool
+auto CCharEntity::inMogHouse(const xi::MogHouse kind) const -> bool
 {
-    return m_moghouseID != 0;
+    switch (kind)
+    {
+        case xi::MogHouse::Own:
+            return m_moghouseID == id;
+        case xi::MogHouse::Visiting:
+            return m_moghouseID != 0 && m_moghouseID != id;
+        case xi::MogHouse::Any:
+        default:
+            return m_moghouseID != 0;
+    }
+}
+
+auto CCharEntity::moghouse() -> MogHouseContainer&
+{
+    return moghouse_;
+}
+
+auto CCharEntity::moghouse() const -> const MogHouseContainer&
+{
+    return moghouse_;
 }
 
 auto CCharEntity::gmCallContainer() -> GMCallContainer&
@@ -996,7 +1013,30 @@ auto CCharEntity::getEquip(const SLOTTYPE slot) const -> CItemEquipment*
         return nullptr;
     }
 
-    return static_cast<CItemEquipment*>(equipped_[slot]);
+    auto* PItem = equipped_[slot];
+    if (!PItem || !PItem->isType(ITEM_EQUIPMENT))
+    {
+        return nullptr;
+    }
+
+    return static_cast<CItemEquipment*>(PItem);
+}
+
+auto CCharEntity::getLinkshell(const SLOTTYPE slot) const -> CItemLinkshell*
+{
+    if (slot != SLOT_LINK1 && slot != SLOT_LINK2)
+    {
+        ShowWarningFmt("getLinkshell: slot {} is not a linkshell slot", slot);
+        return nullptr;
+    }
+
+    auto* PItem = equipped_[slot];
+    if (!PItem || !PItem->isType(ITEM_LINKSHELL))
+    {
+        return nullptr;
+    }
+
+    return static_cast<CItemLinkshell*>(PItem);
 }
 
 auto CCharEntity::equipLocation(const uint8 equipSlot) const -> Maybe<ItemLocation>
@@ -1082,12 +1122,7 @@ void CCharEntity::RemoveTrust(CTrustEntity* PTrust)
         return;
     }
 
-    // clang-format off
-    auto trustIt = std::find_if(PTrusts.begin(), PTrusts.end(), [PTrust](auto trust)
-    {
-        return PTrust == trust;
-    });
-    // clang-format on
+    auto trustIt = std::ranges::find(PTrusts, PTrust);
 
     if (trustIt != PTrusts.end())
     {
@@ -1150,7 +1185,7 @@ auto CCharEntity::Tick(timer::time_point tick) -> Task<void>
         m_deathSyncTime = tick + death_update_frequency;
     }
 
-    if (inMogHouse())
+    if (inMogHouse(xi::MogHouse::Own))
     {
         gardenutils::UpdateGardening(this, SendPacket::Yes);
     }
@@ -2114,7 +2149,7 @@ bool CCharEntity::IsMobOwner(CBattleEntity* PBattleTarget)
         return false;
     }
 
-    if (PBattleTarget->m_OwnerID.UniqueNo == 0 || PBattleTarget->m_OwnerID.UniqueNo == this->id || PBattleTarget->objtype == TYPE_PC)
+    if (PBattleTarget->m_OwnerID.UniqueNo == 0 || PBattleTarget->m_OwnerID.UniqueNo == this->id || dynamic_cast<const CCharEntity*>(PBattleTarget) != nullptr)
     {
         return true;
     }
@@ -2232,7 +2267,7 @@ void CCharEntity::OnRaise()
             ratioReturned          = ((GetMLevel() <= 50) ? 0.50f : 0.90f) * static_cast<double>(1 - settings::get<uint8>("map.EXP_RETAIN"));
         }
 
-        addHP(((hpReturned < 1) ? 1 : hpReturned));
+        addHP(std::max<uint16>(hpReturned, 1));
         updatemask |= UPDATE_HP;
 
         loc.zone->PushPacket(this, CHAR_INRANGE_SELF, std::make_unique<GP_SERV_COMMAND_BATTLE2>(action));
@@ -2380,12 +2415,12 @@ auto CCharEntity::applyTargetRestrictions(CBaseEntity* PResolved, uint16 validTa
     auto* PTarget = PAI->TargetFind->getValidTarget(dynamic_cast<CBattleEntity*>(PResolved), validTargetFlags);
     if (PTarget)
     {
-        if (PTarget->objtype == TYPE_PC && charutils::IsAidBlocked(this, static_cast<CCharEntity*>(PTarget)))
+        if (auto* PChar = dynamic_cast<CCharEntity*>(PTarget); PChar && charutils::IsAidBlocked(this, PChar))
         {
             // Target is blocking assistance
             errMsg = std::make_unique<GP_SERV_COMMAND_SYSTEMMES>(0, 0, MsgStd::TargetIsCurrentlyBlocking);
             // Interaction was blocked
-            static_cast<CCharEntity*>(PTarget)->pushPacket<GP_SERV_COMMAND_SYSTEMMES>(0, 0, MsgStd::BlockedByBlockaid);
+            PChar->pushPacket<GP_SERV_COMMAND_SYSTEMMES>(0, 0, MsgStd::BlockedByBlockaid);
         }
         else if (IsMobOwner(PTarget))
         {
@@ -2720,33 +2755,34 @@ void CCharEntity::changeMoghancement(uint16 moghancementID, bool isAdding)
         return;
     }
 
-    // Apply the Moghancement
+    // Apply moghancements
+    // Desynth/Crystal data: https://www.bluegartr.com/threads/135055-Extensive-Desynthesis-Rate-Research
     int16 multiplier = isAdding ? 1 : -1;
     switch (moghancementID)
     {
         case MOGHANCEMENT_FIRE:
-            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_FIRE, 5 * multiplier);
+            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_FIRE, 10 * multiplier);
             break;
         case MOGHANCEMENT_ICE:
-            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_ICE, 5 * multiplier);
+            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_ICE, 10 * multiplier);
             break;
         case MOGHANCEMENT_WIND:
-            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_WIND, 5 * multiplier);
+            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_WIND, 10 * multiplier);
             break;
         case MOGHANCEMENT_EARTH:
-            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_EARTH, 5 * multiplier);
+            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_EARTH, 10 * multiplier);
             break;
         case MOGHANCEMENT_LIGHTNING:
-            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_THUNDER, 5 * multiplier);
+            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_THUNDER, 10 * multiplier);
             break;
         case MOGHANCEMENT_WATER:
-            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_WATER, 5 * multiplier);
+            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_WATER, 10 * multiplier);
             break;
         case MOGHANCEMENT_LIGHT:
-            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_LIGHT, 5 * multiplier);
+            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_LIGHT, 10 * multiplier);
             break;
         case MOGHANCEMENT_DARK:
-            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_DARK, 5 * multiplier);
+            addModifier(xi::Mod::SYNTH_MATERIAL_LOSS_DARK, 10 * multiplier);
             break;
 
         case MOGHANCEMENT_FISHING:
@@ -2850,7 +2886,7 @@ void CCharEntity::changeMoghancement(uint16 moghancementID, bool isAdding)
             addModifier(xi::Mod::GARDENING_WILT_BONUS, 36 * multiplier);
             break;
         case MOGHANCEMENT_DESYNTHESIS:
-            addModifier(xi::Mod::SYNTH_SUCCESS_RATE_DESYNTHESIS, 2 * multiplier);
+            addModifier(xi::Mod::SYNTH_SUCCESS_RATE_DESYNTHESIS, 4 * multiplier);
             break;
         case MOGHANCEMENT_CONQUEST:
             addModifier(xi::Mod::CONQUEST_BONUS, 6 * multiplier);
@@ -2949,7 +2985,7 @@ bool CCharEntity::OnAttackError(CAttackState& state)
 
 bool CCharEntity::isInTriggerArea(uint32 triggerAreaID)
 {
-    return charTriggerAreaIDs.find(triggerAreaID) != charTriggerAreaIDs.end();
+    return charTriggerAreaIDs.contains(triggerAreaID);
 }
 
 void CCharEntity::onTriggerAreaEnter(uint32 triggerAreaID)
@@ -3261,7 +3297,7 @@ void CCharEntity::clearCharVarsWithPrefix(const std::string& prefix)
     auto iter = charVarCache.begin();
     while (iter != charVarCache.end())
     {
-        if (iter->first.rfind(prefix, 0) == 0)
+        if (iter->first.starts_with(prefix))
         {
             iter->second = { 0, 0 };
         }

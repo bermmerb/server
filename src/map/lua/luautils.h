@@ -375,6 +375,7 @@ void OnTriggerAreaEnter(CCharEntity* PChar, const std::unique_ptr<ITriggerArea>&
 void OnTriggerAreaLeave(CCharEntity* PChar, const std::unique_ptr<ITriggerArea>& PTriggerArea); // when player leaves a trigger area in a zone
 
 void OnTransportEvent(CCharEntity* PChar, xi::ZoneId prevZoneId, std::string_view transport);
+void OnTransportVoyageEnd(CZone* PZone);
 void OnTimeTrigger(CNpcEntity* PNpc, uint8 triggerID);
 void OnConquestUpdate(CZone* PZone, ConquestUpdate type, uint8 influence, uint8 owner, uint8 ranking, bool isConquestAlliance); // conquest update (hourly or tally)
 
@@ -408,7 +409,7 @@ void  OnItemUnequip(CBaseEntity* PUser, CItem* PItem);
 void  CheckForGearSet(CBaseEntity* PTarget);
 
 int32 OnMagicCastingCheck(CBaseEntity* PChar, CBaseEntity* PTarget, CSpell* PSpell);
-int32 OnSpellCast(CBattleEntity* PCaster, CBattleEntity* PTarget, CSpell* PSpell);
+int32 OnSpellCast(CBattleEntity* PCaster, CBattleEntity* PTarget, CSpell* PSpell, action_t* action);
 void  OnSpellPrecast(CBattleEntity* PCaster, CSpell* PSpell);
 void  OnSpellCastStart(CBattleEntity* PCaster, CBattleEntity* PTarget, CSpell* PSpell);
 void  OnSpellInterrupted(CBattleEntity* PCaster, CSpell* PSpell);
@@ -440,6 +441,7 @@ void OnPetLevelRestriction(CBaseEntity* PMob);
 void OnPath(CBaseEntity* PEntity);
 void OnPathPoint(CBaseEntity* PEntity);
 void OnPathComplete(CBaseEntity* PEntity);
+void OnShopBuy(CCharEntity* PChar, CBaseEntity* PNpc, uint16 itemId, uint32 quantity, uint32 gil);
 
 int32 OnBattlefieldHandlerInitialize(CZone* PZone);
 void  OnBattlefieldInitialize(CBattlefield* PBattlefield); // what to do when initialising battlefield, battlefield:setLocalVar("lootId") here for any which have loot

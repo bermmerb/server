@@ -36,6 +36,7 @@
 #include <common/types/hash_map.h>
 
 #include <array>
+#include <bit>
 #include <chrono>
 
 #include "map_constants.h"
@@ -1451,8 +1452,38 @@ void SendKeyItems(CCharEntity* PChar)
 
 void SendInventory(CCharEntity* PChar)
 {
+    // Visitors get the owner's installed furniture instead of their own safes, compacted to slots 1..N of the same safe
+    CCharEntity* PVisitedOwner = nullptr;
+    if (PChar->inMogHouse(xi::MogHouse::Visiting))
+    {
+        PVisitedOwner = PChar->moghouse().host();
+    }
+
+    auto pushVisitedFurniture = [&](auto LocationID)
+    {
+        uint8 slotID         = 1;
+        auto* PFurnitureSafe = PVisitedOwner->getStorage(LocationID);
+        PFurnitureSafe->ForEachItem(
+            [&](CItem* PItem)
+            {
+                if (PItem->isType(ITEM_FURNISHING) && static_cast<CItemFurnishing*>(PItem)->isInstalled())
+                {
+                    PChar->pushPacket<GP_SERV_COMMAND_ITEM_ATTR>(PItem, LocationID, slotID++);
+                }
+            });
+
+        PChar->inventorySyncState().markSynced(LocationID);
+        PChar->pushPacket<GP_SERV_COMMAND_ITEM_SAME>(LocationID, PChar);
+    };
+
     auto pushContainer = [&](auto LocationID)
     {
+        if (PVisitedOwner && (LocationID == LOC_MOGSAFE || LocationID == LOC_MOGSAFE2))
+        {
+            pushVisitedFurniture(LocationID);
+            return;
+        }
+
         CItemContainer* container = PChar->getStorage(LocationID);
         if (container == nullptr)
         {
@@ -1492,7 +1523,7 @@ void SendInventory(CCharEntity* PChar)
         }
     }
 
-    CItem* PItem = PChar->getEquip(SLOT_LINK1);
+    CItem* PItem = PChar->getLinkshell(SLOT_LINK1);
     if (PItem != nullptr)
     {
         auto eloc1 = PChar->equipLocation(SLOT_LINK1);
@@ -1502,7 +1533,7 @@ void SendInventory(CCharEntity* PChar)
         PChar->pushPacket<GP_SERV_COMMAND_GROUP_COMLINK>(PChar, 1);
     }
 
-    PItem = PChar->getEquip(SLOT_LINK2);
+    PItem = PChar->getLinkshell(SLOT_LINK2);
     if (PItem != nullptr)
     {
         auto eloc2 = PChar->equipLocation(SLOT_LINK2);
@@ -3387,7 +3418,7 @@ void BuildingCharAbilityTable(CCharEntity* PChar)
                     chargeTime = charge->chargeTime - std::chrono::seconds(PChar->PMeritPoints->GetMeritValue(static_cast<xi::Merit>(charge->merit), PChar));
                     maxCharges = charge->maxCharges;
                 }
-                if (!PChar->PRecastContainer->Has(RECAST_ABILITY, PAbility->getRecastId()))
+                if (charge || !PChar->PRecastContainer->Has(RECAST_ABILITY, PAbility->getRecastId()))
                 {
                     PChar->PRecastContainer->Add(RECAST_ABILITY, PAbility->getRecastId(), 0s, chargeTime, maxCharges);
                 }
@@ -3427,7 +3458,7 @@ void BuildingCharAbilityTable(CCharEntity* PChar)
                         chargeTime = charge->chargeTime - std::chrono::seconds(PChar->PMeritPoints->GetMeritValue(static_cast<xi::Merit>(charge->merit), PChar));
                         maxCharges = charge->maxCharges;
                     }
-                    if (!PChar->PRecastContainer->Has(RECAST_ABILITY, PAbility->getRecastId()))
+                    if (charge || !PChar->PRecastContainer->Has(RECAST_ABILITY, PAbility->getRecastId()))
                     {
                         PChar->PRecastContainer->Add(RECAST_ABILITY, PAbility->getRecastId(), 0s, chargeTime, maxCharges);
                     }
@@ -3580,16 +3611,10 @@ void BuildingCharSkillsTable(CCharEntity* PChar)
         // Main Job Skills.
         if (maxMainSkill != 0)
         {
-            if (currentSkill > maxMainSkill)
-            {
-                currentSkill = maxMainSkill;
-            }
+            currentSkill = std::min(currentSkill, maxMainSkill);
 
             int16 newSkillValue = currentSkill + skillBonus;
-            if (newSkillValue < 0)
-            {
-                newSkillValue = 0;
-            }
+            newSkillValue       = std::max<int16>(newSkillValue, 0);
 
             PChar->WorkingSkills.skill[i] = static_cast<uint16>(newSkillValue);
 
@@ -3602,16 +3627,10 @@ void BuildingCharSkillsTable(CCharEntity* PChar)
         // Sub Job Skills.
         else if (maxSubSkill != 0)
         {
-            if (currentSkill > maxSubSkill)
-            {
-                currentSkill = maxSubSkill;
-            }
+            currentSkill = std::min(currentSkill, maxSubSkill);
 
             int16 newSkillValue = currentSkill + skillBonus;
-            if (newSkillValue < 0)
-            {
-                newSkillValue = 0;
-            }
+            newSkillValue       = std::max<int16>(newSkillValue, 0);
 
             PChar->WorkingSkills.skill[i] = static_cast<uint16>(newSkillValue);
 
@@ -3624,10 +3643,7 @@ void BuildingCharSkillsTable(CCharEntity* PChar)
         // Job setup doesn't have this skill.
         else
         {
-            if (skillBonus < 0)
-            {
-                skillBonus = 0;
-            }
+            skillBonus                    = std::max<int16>(skillBonus, 0);
             PChar->WorkingSkills.skill[i] = static_cast<uint16>(skillBonus) | 0x8000; // New value AND Blue text.
         }
 
@@ -3780,10 +3796,7 @@ void TrySkillUP(CCharEntity* PChar, xi::SkillType SkillID, uint8 lvl, bool force
 
         double random = xirand::GetRandomNumber(1.);
 
-        if (SkillUpChance > 0.5)
-        {
-            SkillUpChance = 0.5;
-        }
+        SkillUpChance = std::min(SkillUpChance, 0.5);
 
         // Check for skillup% bonus. https://www.bg-wiki.com/bg/Category:Skill_Up_Food
         // Assuming multiplicative even though rate is already a % because 0.5 + 0.8 would be > 1.
@@ -3840,30 +3853,20 @@ void TrySkillUP(CCharEntity* PChar, xi::SkillType SkillID, uint8 lvl, bool force
             // convert to 10th units
             CapSkill = CapSkill * 10;
 
-            int16 rovBonus = 1;
-
-            for (const auto skillupIncreaseKeyItem : skillupIncreaseKeyItems)
-            {
-                if (hasKeyItem(PChar, skillupIncreaseKeyItem))
-                {
-                    rovBonus += 1;
-                }
-            }
+            const auto rovBonus = static_cast<int16>(1 + std::ranges::count_if(skillupIncreaseKeyItems,
+                                                                               [&](const auto skillupIncreaseKeyItem)
+                                                                               {
+                                                                                   return hasKeyItem(PChar, skillupIncreaseKeyItem);
+                                                                               }));
 
             SkillAmount *= rovBonus;
-            if (SkillAmount > 9)
-            {
-                SkillAmount = 9;
-            }
+            SkillAmount = std::min<uint8>(SkillAmount, 9);
 
             // Do skill amount multiplier (Will only be applied if default setting is changed)
             if (settings::get<uint8>("map.SKILLUP_AMOUNT_MULTIPLIER") > 1)
             {
                 SkillAmount += (uint8)(SkillAmount * settings::get<uint8>("map.SKILLUP_AMOUNT_MULTIPLIER"));
-                if (SkillAmount > 9)
-                {
-                    SkillAmount = 9;
-                }
+                SkillAmount = std::min<uint8>(SkillAmount, 9);
             }
 
             if (SkillAmount + CurSkill >= CapSkill)
@@ -4243,31 +4246,16 @@ bool canUseWeaponSkill(CCharEntity* PChar, uint16 wsid)
 
 int32 hasTrait(CCharEntity* PChar, uint16 TraitID)
 {
-    if (PChar->objtype != TYPE_PC)
-    {
-        ShowError("charutils::hasTrait Attempt to reference a trait from a non-character entity: %s %i", PChar->name.c_str(), PChar->id);
-        return 0;
-    }
     return hasBit(TraitID, PChar->m_TraitList, sizeof(PChar->m_TraitList));
 }
 
 int32 addTrait(CCharEntity* PChar, uint16 TraitID)
 {
-    if (PChar->objtype != TYPE_PC)
-    {
-        ShowError("charutils::addTrait Attempt to reference a trait from a non-character entity: %s %i", PChar->name.c_str(), PChar->id);
-        return 0;
-    }
     return addBit(TraitID, PChar->m_TraitList, sizeof(PChar->m_TraitList));
 }
 
 int32 delTrait(CCharEntity* PChar, uint16 TraitID)
 {
-    if (PChar->objtype != TYPE_PC)
-    {
-        ShowError("charutils::delTrait Attempt to reference a trait from a non-character entity: %s %i", PChar->name.c_str(), PChar->id);
-        return 0;
-    }
     return delBit(TraitID, PChar->m_TraitList, sizeof(PChar->m_TraitList));
 }
 
@@ -5772,11 +5760,8 @@ void SaveChatFilterFlags(CCharEntity* PChar)
 {
     TracyZoneScoped;
 
-    uint32_t filters1 = {};
-    uint32_t filters2 = {};
-
-    std::memcpy(&filters1, &PChar->playerConfig.MessageFilter, sizeof(uint32_t));
-    std::memcpy(&filters2, &PChar->playerConfig.MessageFilter2, sizeof(uint32_t));
+    const auto filters1 = std::bit_cast<uint32_t>(PChar->playerConfig.MessageFilter);
+    const auto filters2 = std::bit_cast<uint32_t>(PChar->playerConfig.MessageFilter2);
 
     db::preparedStmt("UPDATE chars "
                      "SET "
@@ -7421,7 +7406,7 @@ bool hasEntitySpawned(CCharEntity* PChar, CBaseEntity* entity)
     {
         spawnlist = &PChar->SpawnNPCList;
     }
-    else if (entity->objtype == TYPE_PC)
+    else if (dynamic_cast<const CCharEntity*>(entity) != nullptr)
     {
         spawnlist = &PChar->SpawnPCList;
     }
@@ -7632,6 +7617,21 @@ void loadDeathTimestamp(CCharEntity* PChar)
     }
 }
 
+auto IsHomeNation(const uint8 nation, const REGION_TYPE region) -> bool
+{
+    switch (region)
+    {
+        case REGION_TYPE::SANDORIA:
+            return nation == NATION_SANDORIA;
+        case REGION_TYPE::BASTOK:
+            return nation == NATION_BASTOK;
+        case REGION_TYPE::WINDURST:
+            return nation == NATION_WINDURST;
+        default:
+            return false;
+    }
+}
+
 bool isOrchestrionPlaced(CCharEntity* PChar)
 {
     for (auto safeContainerId : { LOC_MOGSAFE, LOC_MOGSAFE2 })
@@ -7655,9 +7655,17 @@ bool isOrchestrionPlaced(CCharEntity* PChar)
 
 void updateMannequins(CCharEntity* PChar)
 {
+    auto* POwner = PChar->moghouse().host();
+    if (POwner == nullptr)
+    {
+        return;
+    }
+
     for (auto safeContainerId : { LOC_MOGSAFE, LOC_MOGSAFE2 })
     {
-        auto* PContainer = PChar->getStorage(safeContainerId);
+        // Visitors have the owner's installed furniture at slots 1..N, see SendInventory
+        uint8 visitorSlotID = 1;
+        auto* PContainer    = POwner->getStorage(safeContainerId);
         PContainer->ForEachItem(
             [&](CItem* PItem)
             {
@@ -7667,7 +7675,18 @@ void updateMannequins(CCharEntity* PChar)
                 }
 
                 auto* PFurnishing = static_cast<CItemFurnishing*>(PItem);
-                if (PFurnishing->isInstalled() && PFurnishing->isMannequin())
+                if (!PFurnishing->isInstalled())
+                {
+                    return;
+                }
+
+                uint8 slotID = PItem->getSlotID();
+                if (POwner != PChar)
+                {
+                    slotID = visitorSlotID++;
+                }
+
+                if (PFurnishing->isMannequin())
                 {
                     auto& mannequin = PFurnishing->exdata<Exdata::Mannequin>();
 
@@ -7676,7 +7695,7 @@ void updateMannequins(CCharEntity* PChar)
                         ShowWarning("Invalid Mannequin placed (race of 0 in exdata, when races start at 1). It will be unusable.");
                     }
 
-                    PChar->pushPacket<GP_SERV_COMMAND_ITEM_SUBCONTAINER>(PChar, safeContainerId, PItem->getSlotID(), mannequin);
+                    PChar->pushPacket<GP_SERV_COMMAND_ITEM_SUBCONTAINER>(POwner, safeContainerId, slotID, mannequin);
                 }
             });
     }
