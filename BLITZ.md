@@ -21,7 +21,7 @@ fork นี้คือโค้ด LandSandBoat ที่ใช้รันเ�
 |---|---|---|
 | `blitz-pr.yml` | เปิด/อัปเดต PR เข้า `blitz` | build image (ไม่ publish) แล้วเทสต์ด้วย docker test ของ LSB (dbtool, xi_test, startup checks) ผลรวมอยู่ใน check **Blitz PR gate** ซึ่ง ruleset บังคับให้ผ่านก่อน merge |
 | `blitz-image.yml` | push เข้า `blitz` (หรือกด Run บน `blitz` เท่านั้น) | build แล้ว publish `ghcr.io/bermmerb/server`, เทสต์, ผ่านแล้วติดป้าย `:release` เฉพาะเมื่อ commit นี้ยังเป็นยอดของ `blitz` และ image ที่เทสต์คือ image ของ commit นี้ (re-run ของรอบเก่าจะไม่ย้าย `:release` ถอยหลัง) |
-| `blitz-sync.yml` | ทุกวันจันทร์ 02:00 (เวลาไทย) หรือกดเอง | merge `LandSandBoat/server` base เข้า branch sync แล้วเปิด PR ที่ merge ตัวเองเมื่อ Blitz PR gate ผ่าน ถ้าชนจะ fail และบอกไฟล์ที่ชนใน summary ถ้า LSB เพิ่มหรือ rename ไฟล์ workflow จะเปิด PR แบบไม่ auto-merge แล้ว fail ให้คนมาดูก่อน |
+| `blitz-sync.yml` | ทุกวันเสาร์ 02:00 (เวลาไทย ก่อน auto-update ของ VM วันอาทิตย์ 03:00 หนึ่งวัน) หรือกดเอง | merge `LandSandBoat/server` base เข้า branch sync แล้วเปิด PR ที่ merge ตัวเองเมื่อ Blitz PR gate ผ่าน ถ้าชนจะ fail และบอกไฟล์ที่ชนใน summary ถ้า LSB เพิ่มหรือ rename ไฟล์ workflow จะเปิด PR แบบไม่ auto-merge แล้ว fail ให้คนมาดูก่อน |
 | `blitz-retry.yml` | Blitz Image/PR fail | รันงานที่ fail ซ้ำ 1 ครั้ง (xi_test ของ LSB ล้มแบบสุ่มเป็นบางครั้ง) |
 | `blitz-guard.yml` | ไฟล์ workflow บน `blitz` เปลี่ยน | ปิด workflow อื่นทั้งหมดยกเว้น `blitz-*` และ reusable ที่เราเรียกใช้ (`docker_build`, `docker_test`, `runner_build`, `runner_test`) |
 
