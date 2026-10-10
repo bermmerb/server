@@ -14,6 +14,12 @@ on:
   push:
     branches:
       - blitz
+    # Changes to only these files leave the server image as it is, so they do not get
+    # a new :release (which would make the game VM restart for nothing). Run the
+    # workflow by hand if one of them ever needs a rebuild.
+    paths-ignore:
+      - 'BLITZ.md'
+      - '.github/workflows/blitz-*.yml'
   workflow_dispatch:  # rebuild blitz by hand; other branches are skipped (see the if: below)
 
 concurrency:
