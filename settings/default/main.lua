@@ -83,12 +83,8 @@ xi.settings.main =
     -- Moblin Maze Mongers
     ENABLE_MMM = 0,
 
-    -- Monstrosity (Heavily in development, use at your own risk!)
-    ENABLE_MONSTROSITY               = 0,
-    MONSTROSITY_TELEPORT_TO_FERETORY = 0,   -- Return to Feretory instead of the zone where you entered Feretory when Relinquishing or after death.
-    MONSTROSITY_TRIGGER_NPCS         = 0,   -- Allow Monipulators to trigger NPCs outside of the Feretory.
-    MONSTROSITY_DONT_WIPE_BUFFS      = 0,   -- If set, buffs won't be wiped when changing species in the Feretory.
-    MONSTROSITY_PVP_ZONE_BYPASS = 0, -- Show the full zone teleport menu from Feretory while Belligerency is flagged.
+    -- Monstrosity
+    ENABLE_MONSTROSITY = 1,
 
     -- TREASURE CASKETS
     -- Retail droprate = 0.1 (10%) with no other effects active
@@ -304,6 +300,9 @@ xi.settings.main =
     -- GMs open the developer debug menu on the chocobo next to each VCS trainer.
     ENABLE_CHOCOBO_RAISING = true,  -- true/false. Enable Chocobo Raising features.
     DEBUG_CHOCOBO_RAISING  = false, -- true/false. Enable verbose debug logging for Chocobo Raising (visible by players).
+
+    -- CHOCOBO RACING
+    ENABLE_CHOCOBO_RACING = true, -- true/false. Enable Chocobo Racing features.
 
     -- SYNERGY (HEAVILY-IN-DEVELOPMENT, USE AT YOUR OWN RISK)
     ENABLE_SYNERGY = false, -- true/false. Enable Synergy features.

@@ -1263,7 +1263,7 @@ xi.combat.physical.canParry = function(defender, attacker)
                 canParry = mainWeapon:getSkillType() ~= xi.skill.HAND_TO_HAND
             end
         else
-            canParry = defender:getMobMod(xi.mobMod.CAN_PARRY) > 0
+            canParry = defender:getMobMod(xi.mobMod.CAN_PARRY) > 0 and not defender:isUsingH2H()
         end
     end
 
@@ -1326,8 +1326,7 @@ xi.combat.physical.canGuard = function(defender, attacker)
     -- https://genomeffxi.livejournal.com/18269.html
     if
         defender:isFacing(attacker) and
-        defender:isEngaged() and
-        not defender:hasPreventActionEffect(true) -- Not stunned, slept, etc, but can guard when charmed
+        defender:isEngaged()
     then
         if defender:isPC() and defender:getSkillRank(xi.skill.GUARD) > 0 then
             local mainWeapon = defender:getEquippedItem(xi.slot.MAIN)

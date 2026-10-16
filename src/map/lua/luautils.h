@@ -1,4 +1,4 @@
-﻿/*
+/*
 ===========================================================================
 
   Copyright (c) 2010-2015 Darkstar Dev Teams
@@ -122,6 +122,13 @@ class CLuaZone;
 struct action_t;
 struct action_target_t;
 struct action_result_t;
+
+namespace monstrosity
+{
+
+struct MonstrosityData_t;
+
+} // namespace monstrosity
 
 enum ConquestUpdate : uint8;
 enum class Emote : uint8;
@@ -316,6 +323,10 @@ auto LoadLinkshellConciergeSlots(uint16 zoneId) -> sol::table;
 void SetLinkshellConciergeSlot(uint16 zoneId, uint8 slotIndex, const sol::table& data);
 void DeleteLinkshellConciergeSlot(uint16 zoneId, uint8 slotIndex);
 void DecrementLinkshellConciergeMembersGoal(uint16 zoneId, uint32 linkshellid);
+auto LoadChocoboRaceResult(uint32 raceNo) -> sol::object;
+void SaveChocoboRaceResult(const sol::table& data);
+auto GetChocoboRaceQuills(uint32 raceNo) -> sol::table;
+void AddChocoboRaceQuills(uint32 raceNo, uint8 pair, uint32 quills);
 
 uint32 JstDayOfTheYear();
 uint32 JstDayOfTheMonth();
@@ -464,9 +475,8 @@ void   OnMobSkillFinalize(CBaseEntity* PMob, CMobSkill* PMobSkill); // triggers 
 int32  OnAutomatonAbilityCheck(CBaseEntity* PChar, CAutomatonEntity* PAutomaton, CMobSkill* PMobSkill);
 int32  OnAutomatonAbility(CBaseEntity* PTarget, CBaseEntity* PMob, CMobSkill* PMobSkill, CBaseEntity* PMobMaster, action_t* action);
 
-auto GetMonstrosityLuaTable(CCharEntity* PChar) -> sol::table;
-void SetMonstrosityLuaTable(CCharEntity* PChar, sol::table data);
-void OnMonstrosityUpdate(CCharEntity* PChar);
+auto GetMonstrosityLuaTable(const monstrosity::MonstrosityData_t& data) -> sol::table;
+void SetMonstrosityLuaTable(monstrosity::MonstrosityData_t& data, sol::table table);
 void OnMonstrosityReturnToEntrance(CCharEntity* PChar);
 
 int32 OnAbilityCheck(CBaseEntity* PChar, CBaseEntity* PTarget, CAbility* PAbility, CBaseEntity** PMsgTarget);

@@ -1,4 +1,4 @@
-﻿/*
+/*
 ===========================================================================
 
   Copyright (c) 2010-2015 Darkstar Dev Teams
@@ -209,6 +209,7 @@ void InsertNPCs(CZone* PZone, const xi::ZoneId zoneId, const xi::data::Npcs& npc
             PNpc->status = xi::Status::Disappear;
 
             PNpc->setWidescan(false);
+            PNpc->setContentDisabled(true);
         }
 
         PZone->InsertNPC(PNpc);

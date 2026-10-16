@@ -1,4 +1,4 @@
-﻿/*
+/*
 ===========================================================================
 
   Copyright (c) 2025 LandSandBoat Dev Teams
@@ -22,6 +22,7 @@
 #include "0x036_item_transfer.h"
 
 #include "entities/char_entity.h"
+#include "entities/npc_entity.h"
 #include "enums/msg_std.h"
 #include "items/transactions/npc_trade.h"
 #include "lua/luautils.h"
@@ -44,8 +45,10 @@ constexpr uint8 MAX_TRADE_SLOTS = 9;
 
 auto GP_CLI_COMMAND_ITEM_TRANSFER::validate(MapSession* PSession, const CCharEntity* PChar) const -> PacketValidationResult
 {
+    // A Monipulator can only trade with the Feretory's NPCs.
     return PacketValidator(PChar)
-        .blockedBy({ BlockedState::InEvent, BlockedState::Monstrosity })
+        .blockedBy({ BlockedState::InEvent })
+        .mustEqual(PChar->m_PMonstrosity == nullptr || PChar->getZone() == xi::ZoneId::Feretory, true, "Monipulators only trade in the Feretory")
         .range("ItemNum", this->ItemNum, 1, MAX_TRADE_SLOTS);
 }
 
@@ -69,6 +72,11 @@ void GP_CLI_COMMAND_ITEM_TRANSFER::process(MapSession* PSession, CCharEntity* PC
     }
 
     if (PChar->inMogHouse(xi::MogHouse::Visiting))
+    {
+        return;
+    }
+
+    if (const auto* PNpcEntity = dynamic_cast<CNpcEntity*>(PNpc); PNpcEntity && PNpcEntity->contentDisabled())
     {
         return;
     }

@@ -1,4 +1,4 @@
-﻿/*
+/*
 ===========================================================================
 
   Copyright (c) 2010-2015 Darkstar Dev Teams
@@ -90,6 +90,7 @@ auto LoadChar(uint32 charId) -> std::unique_ptr<CCharEntity>;
 void LoadFromCharSpellsSQL(CCharEntity* PChar);
 void LoadInventory(CCharEntity* PChar);
 void LoadEquip(CCharEntity* PChar);
+void SetRaceHitbox(CCharEntity* PChar);
 
 void SendQuestMissionLog(CCharEntity* PChar);
 void SendPartialMissionLog(CCharEntity* PChar, MissionLog log, bool completed);
@@ -110,6 +111,7 @@ EMobDifficulty CheckMob(uint8 charlvl, CBattleEntity* PMob);
 
 uint32 GetBaseExp(uint8 charlvl, int16 moblvl);
 uint32 GetExpNEXTLevel(uint8 charlvl);
+auto   GetExpNEXTLevelForChar(const CCharEntity* PChar, uint8 charlvl) -> uint32;
 uint8  GetExpLevel(CBattleEntity* PMember);
 
 void DelExperiencePoints(CCharEntity* PChar, float retainpct, uint16 forcedXpLoss);
@@ -257,6 +259,7 @@ void RemoveAllEquipMods(CCharEntity* PChar);
 void ApplyAllEquipMods(CCharEntity* PChar);
 
 void ClearTempItems(CCharEntity* PChar);
+void LeaveParty(CCharEntity* PChar);
 void ReloadParty(CCharEntity* PChar);
 void RemoveSeekFlag(CCharEntity* PChar);
 

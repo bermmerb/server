@@ -1,4 +1,4 @@
-﻿/*
+/*
 ===========================================================================
 
   Copyright (c) 2010-2015 Darkstar Dev Teams
@@ -283,7 +283,7 @@ auto CAIContainer::Internal_WeaponSkill(const EntityId& target, uint16 wsid) -> 
     return false;
 }
 
-auto CAIContainer::Internal_MobSkill(const EntityId& target, uint16 wsid, Maybe<timer::duration> castTimeOverride) -> bool
+auto CAIContainer::Internal_MobSkill(const EntityId& target, uint16 wsid, Maybe<timer::duration> castTimeOverride, Maybe<uint16> tpCostOverride) -> bool
 {
     auto* entity = dynamic_cast<CBattleEntity*>(PEntity);
     if (entity)
@@ -293,7 +293,7 @@ auto CAIContainer::Internal_MobSkill(const EntityId& target, uint16 wsid, Maybe<
             return false;
         }
 
-        return ChangeState<CMobSkillState>(entity, target, wsid, castTimeOverride);
+        return ChangeState<CMobSkillState>(entity, target, wsid, castTimeOverride, tpCostOverride);
     }
     return false;
 }
@@ -512,6 +512,16 @@ auto CAIContainer::Tick(const timer::time_point tick) -> Task<void>
     // A re-entrant change can suspend or retire the state we are executing in, but never free it.
     //
 
+    // magic and mobskill states resolve their own interrupt at their finish.
+    const auto shouldGoInactive = [&]() -> bool
+    {
+        auto* battle = dynamic_cast<CBattleEntity*>(PEntity);
+
+        return battle && battle->isAlive() && !IsCurrentState<CInactiveState>() &&
+               !IsCurrentState<CMagicState>() && !IsCurrentState<CMobSkillState>() &&
+               battle->StatusEffectContainer->HasPreventActionEffect(true);
+    };
+
     // The guard is a backstop against
     // a state that completes and re-enters itself every iteration (the stack is capped at
     // 10, so a healthy tick drains well within this bound).
@@ -538,15 +548,15 @@ auto CAIContainer::Tick(const timer::time_point tick) -> Task<void>
         {
             finishCurrentState(tick);
         }
+
+        // the resumed state must not act under a prevent-action effect.
+        if (shouldGoInactive())
+        {
+            break;
+        }
     }
 
-    // Magic and mobskill states decide their own interrupt at their finish (mid-action
-    // prevent-action effects don't cancel them on retail), so we never force them inactive
-    // from here. Once such a state ends, this poll parks the entity inactive.
-    if (auto* battle = dynamic_cast<CBattleEntity*>(PEntity);
-        battle && battle->isAlive() && !IsCurrentState<CInactiveState>() &&
-        !IsCurrentState<CMagicState>() && !IsCurrentState<CMobSkillState>() &&
-        battle->StatusEffectContainer->HasPreventActionEffect(true))
+    if (shouldGoInactive())
     {
         Inactive(0ms, false);
     }

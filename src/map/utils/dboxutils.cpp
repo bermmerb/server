@@ -1,4 +1,4 @@
-﻿/*
+/*
 ===========================================================================
 
   Copyright (c) 2025 LandSandBoat Dev Teams
@@ -25,9 +25,11 @@
 #include "common/macros.h"
 #include "common/settings.h"
 
+#include "ai/ai_container.h"
 #include "entities/char_entity.h"
 #include "enums/msg_std.h"
 
+#include "items.h"
 #include "items/transactions/item_claim.h"
 #include "utils/charutils.h"
 #include "utils/itemutils.h"
@@ -60,6 +62,8 @@ void dboxutils::SendOldItems(CCharEntity* PChar, GP_CLI_COMMAND_PBX_BOXNO BoxNo)
         ShowWarningFmt("DBOX: Received action SendOldItems while UContainer is in an invalid state: {} ({})", PChar->getName(), PChar->id);
         return;
     }
+
+    BoxNo = OpenBoxNo(PChar);
 
     const auto rset = db::preparedStmt("SELECT itemid, itemsubid, slot, quantity, sent, extra, sender, charname FROM delivery_box WHERE charid = ? AND box = ? "
                                        "AND slot < 8 ORDER BY slot",
@@ -478,6 +482,19 @@ void dboxutils::SendNewItems(Scheduler& scheduler, CCharEntity* PChar, GP_CLI_CO
 
                                     // TODO: increment "count" for every new item, if needed
                                     PChar->pushPacket<GP_SERV_COMMAND_PBX_RESULT>(GP_CLI_COMMAND_PBX_COMMAND::Recv, BoxNo, nullptr, PostWorkNo, 1, 2);
+
+                                    // The AH gil message does not print for the first slot if we send the two packets immediately so delay the 2nd one to next network cycle.
+                                    // Retail delays updates by 300ms each but it feels incredibly slow, this approach keeps the other slots loading rapidly as they are not affected by this bug.
+                                    if (PostWorkNo == 0 && PItem->getID() == GIL)
+                                    {
+                                        PChar->PAI->QueueAction(queueAction_t(0ms, false,
+                                        [packet = std::make_unique<GP_SERV_COMMAND_PBX_RESULT>(GP_CLI_COMMAND_PBX_COMMAND::Recv, BoxNo, PItem, PostWorkNo, 1, 1)](CBaseEntity* PEntity) mutable
+                                        {
+                                            static_cast<CCharEntity*>(PEntity)->pushPacket(std::move(packet));
+                                        }));
+                                        return;
+                                    }
+
                                     PChar->pushPacket<GP_SERV_COMMAND_PBX_RESULT>(GP_CLI_COMMAND_PBX_COMMAND::Recv, BoxNo, PItem, PostWorkNo, 1, 1);
                                     return;
                                 }
@@ -650,6 +667,8 @@ void dboxutils::TakeItemFromCell(CCharEntity* PChar, GP_CLI_COMMAND_PBX_BOXNO Bo
         ShowWarningFmt("DBOX: Received action TakeItemFromCell while UContainer is in an invalid state {} ({})", PChar->getName(), PChar->id);
         return;
     }
+
+    BoxNo = OpenBoxNo(PChar);
 
     if (!PChar->UContainer->IsSlotEmpty(PostWorkNo))
     {
@@ -842,4 +861,19 @@ auto dboxutils::IsRecvBoxOpen(const CCharEntity* PChar) -> bool
 auto dboxutils::IsAnyDeliveryBoxOpen(CCharEntity* PChar) -> bool
 {
     return IsSendBoxOpen(PChar) || IsRecvBoxOpen(PChar);
+}
+
+auto dboxutils::OpenBoxNo(const CCharEntity* PChar) -> GP_CLI_COMMAND_PBX_BOXNO
+{
+    if (IsSendBoxOpen(PChar))
+    {
+        return GP_CLI_COMMAND_PBX_BOXNO::Outgoing;
+    }
+
+    if (IsRecvBoxOpen(PChar))
+    {
+        return GP_CLI_COMMAND_PBX_BOXNO::Incoming;
+    }
+
+    return GP_CLI_COMMAND_PBX_BOXNO::None;
 }

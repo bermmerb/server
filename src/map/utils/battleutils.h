@@ -1,4 +1,4 @@
-﻿/*
+/*
 ===========================================================================
 
   Copyright (c) 2010-2015 Darkstar Dev Teams
@@ -107,6 +107,8 @@ void LoadSkillTable();
 void LoadWeaponSkillsList();
 void LoadMobSkillsList();
 void LoadPetSkillsList();
+
+[[nodiscard]] auto GetEcosystemStrongAgainst(xi::Ecosystem ecosystem) -> xi::Ecosystem;
 
 uint8 CheckMultiHits(CBattleEntity* PEntity, CItemWeapon* PWeapon);
 
