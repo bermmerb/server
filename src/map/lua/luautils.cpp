@@ -1,4 +1,4 @@
-﻿/*
+/*
 ===========================================================================
 
   Copyright (c) 2010-2015 Darkstar Dev Teams
@@ -65,6 +65,8 @@
 
 #include "packets/s2c/0x017_chat_std.h"
 #include "packets/s2c/0x05a_motionmes.h"
+#include "packets/s2c/0x069_chocobo_racing.h"
+#include "packets/s2c/0x073_chocobo_toteboard.h"
 
 #include "persist_batch.h"
 #include "utils/battleutils.h"
@@ -337,6 +339,10 @@ void init(IPP mapIPP, bool isRunningInCI)
     lua.set_function("SetLinkshellConciergeSlot", &luautils::SetLinkshellConciergeSlot);
     lua.set_function("DeleteLinkshellConciergeSlot", &luautils::DeleteLinkshellConciergeSlot);
     lua.set_function("DecrementLinkshellConciergeMembersGoal", &luautils::DecrementLinkshellConciergeMembersGoal);
+    lua.set_function("LoadChocoboRaceResult", &luautils::LoadChocoboRaceResult);
+    lua.set_function("SaveChocoboRaceResult", &luautils::SaveChocoboRaceResult);
+    lua.set_function("GetChocoboRaceQuills", &luautils::GetChocoboRaceQuills);
+    lua.set_function("AddChocoboRaceQuills", &luautils::AddChocoboRaceQuills);
     lua.set_function("JstMidnight", &luautils::JstMidnight);
     lua.set_function("JstDayOfTheYear", &luautils::JstDayOfTheYear);
     lua.set_function("JstDayOfTheMonth", &luautils::JstDayOfTheMonth);
@@ -1992,6 +1998,203 @@ void SetLinkshellConciergeSlot(uint16 zoneId, uint8 slotIndex, const sol::table&
                      data.get_or<uint8>("days", 0),
                      data.get_or<uint32>("times", 0),
                      data.get_or<uint32>("postedDate", 0));
+}
+
+auto LoadChocoboRaceResult(const uint32 raceNo) -> sol::object
+{
+    TracyZoneScoped;
+
+    const auto rset = db::preparedStmt(
+        "SELECT weather, places, run_at, intro_first, intro_second, chocobos, names, sections "
+        "FROM chocobo_race_results WHERE race_no = ? LIMIT 1",
+        raceNo);
+    FOR_DB_SINGLE_RESULT(rset)
+    {
+        GP_SERV_COMMAND_CHOCOBO_RACING::Chocobos                                     chocobos{};
+        std::array<std::array<char, 16>, GP_SERV_COMMAND_CHOCOBO_RACING::kNumRacers> names{};
+        GP_SERV_COMMAND_CHOCOBO_RACING::Sections                                     sections{};
+        db::extractFromBlob(rset, "chocobos", chocobos);
+        db::extractFromBlob(rset, "names", names);
+        db::extractFromBlob(rset, "sections", sections);
+
+        const auto packed = rset->get<uint32>("places");
+        sol::table places = lua.create_table();
+        for (std::size_t racer = 0; racer < GP_SERV_COMMAND_CHOCOBO_RACING::kNumRacers; ++racer)
+        {
+            places[racer + 1] = (packed >> (racer * 4)) & 0x0F;
+        }
+
+        sol::table chocoboTable = lua.create_table();
+        for (std::size_t racer = 0; racer < GP_SERV_COMMAND_CHOCOBO_RACING::kNumRacers; ++racer)
+        {
+            sol::table chocobo      = chocobos[racer].toLua();
+            chocobo["name"]         = std::string(names[racer].data(), strnlen(names[racer].data(), names[racer].size()));
+            chocoboTable[racer + 1] = chocobo;
+        }
+
+        sol::table sectionTable = lua.create_table();
+        for (std::size_t section = 0; section < GP_SERV_COMMAND_CHOCOBO_RACING::kMaxSections; ++section)
+        {
+            sectionTable[section + 1] = sections[section].toLua();
+        }
+
+        sol::table result  = lua.create_table();
+        result["raceNo"]   = raceNo;
+        result["weather"]  = rset->get<uint8>("weather");
+        result["places"]   = places;
+        result["runAt"]    = rset->get<uint32>("run_at");
+        result["intro"]    = lua.create_table_with(1, rset->get<uint8>("intro_first"), 2, rset->get<uint8>("intro_second"));
+        result["chocobos"] = chocoboTable;
+        result["sections"] = sectionTable;
+
+        return result;
+    }
+
+    return sol::lua_nil;
+}
+
+void SaveChocoboRaceResult(const sol::table& data)
+{
+    TracyZoneScoped;
+
+    const auto chocoboTable = data.get<sol::optional<sol::table>>("chocobos");
+
+    const auto places = [&]() -> uint32
+    {
+        uint32 packed = 0;
+        if (const auto placeTable = data.get<sol::optional<sol::table>>("places"))
+        {
+            for (std::size_t racer = 0; racer < GP_SERV_COMMAND_CHOCOBO_RACING::kNumRacers; ++racer)
+            {
+                packed |= (placeTable->get_or<uint32>(racer + 1, 0) & 0x0F) << (racer * 4);
+            }
+        }
+
+        return packed;
+    }();
+
+    auto chocobos = [&]() -> GP_SERV_COMMAND_CHOCOBO_RACING::Chocobos
+    {
+        GP_SERV_COMMAND_CHOCOBO_RACING::Chocobos entries{};
+        if (!chocoboTable)
+        {
+            return entries;
+        }
+
+        for (std::size_t racer = 0; racer < GP_SERV_COMMAND_CHOCOBO_RACING::kNumRacers; ++racer)
+        {
+            if (const auto chocobo = chocoboTable->get<sol::optional<sol::table>>(racer + 1))
+            {
+                entries[racer] = GP_SERV_COMMAND_CHOCOBO_RACING::ChocoboParam::fromLua(*chocobo);
+            }
+        }
+
+        return entries;
+    }();
+
+    auto names = [&]() -> std::array<std::array<char, 16>, GP_SERV_COMMAND_CHOCOBO_RACING::kNumRacers>
+    {
+        std::array<std::array<char, 16>, GP_SERV_COMMAND_CHOCOBO_RACING::kNumRacers> entries{};
+        if (!chocoboTable)
+        {
+            return entries;
+        }
+
+        for (std::size_t racer = 0; racer < GP_SERV_COMMAND_CHOCOBO_RACING::kNumRacers; ++racer)
+        {
+            if (const auto chocobo = chocoboTable->get<sol::optional<sol::table>>(racer + 1))
+            {
+                const std::string name = chocobo->get_or<std::string>("name", "");
+                std::memcpy(entries[racer].data(), name.data(), std::min(name.size(), entries[racer].size() - 1));
+            }
+        }
+
+        return entries;
+    }();
+
+    auto sections = [&]() -> GP_SERV_COMMAND_CHOCOBO_RACING::Sections
+    {
+        GP_SERV_COMMAND_CHOCOBO_RACING::Sections entries{};
+        if (const auto sectionTable = data.get<sol::optional<sol::table>>("sections"))
+        {
+            for (std::size_t section = 0; section < GP_SERV_COMMAND_CHOCOBO_RACING::kMaxSections; ++section)
+            {
+                if (const auto entry = sectionTable->get<sol::optional<sol::table>>(section + 1))
+                {
+                    entries[section] = GP_SERV_COMMAND_CHOCOBO_RACING::SectionParam::fromLua(*entry);
+                }
+            }
+        }
+
+        return entries;
+    }();
+
+    const auto [introFirst, introSecond] = [&]() -> std::pair<uint8, uint8>
+    {
+        if (const auto intro = data.get<sol::optional<sol::table>>("intro"))
+        {
+            return { intro->get_or<uint8>(1, 0), intro->get_or<uint8>(2, 0) };
+        }
+
+        return { 0, 0 };
+    }();
+
+    db::preparedStmt(
+        "INSERT INTO chocobo_race_results SET race_no = ?, weather = ?, places = ?, run_at = ?, "
+        "intro_first = ?, intro_second = ?, chocobos = ?, names = ?, sections = ? "
+        "ON DUPLICATE KEY UPDATE weather = VALUES(weather), places = VALUES(places), run_at = VALUES(run_at), "
+        "intro_first = VALUES(intro_first), intro_second = VALUES(intro_second), chocobos = VALUES(chocobos), "
+        "names = VALUES(names), sections = VALUES(sections)",
+        data.get_or<uint32>("raceNo", 0),
+        data.get_or<uint8>("weather", 0),
+        places,
+        data.get_or<uint32>("runAt", 0),
+        introFirst,
+        introSecond,
+        chocobos,
+        names,
+        sections);
+}
+
+auto GetChocoboRaceQuills(const uint32 raceNo) -> sol::table
+{
+    TracyZoneScoped;
+
+    sol::table quills = lua.create_table();
+    for (std::size_t pair = 0; pair < GP_SERV_COMMAND_CHOCOBO_TOTEBOARD::kNumOdds; ++pair)
+    {
+        quills[pair + 1] = 0;
+    }
+
+    const auto rset = db::preparedStmt("SELECT pair, quills FROM chocobo_race_quills WHERE race_no = ?", raceNo);
+    FOR_DB_MULTIPLE_RESULTS(rset)
+    {
+        const auto pair = rset->get<uint8>("pair");
+        if (pair < GP_SERV_COMMAND_CHOCOBO_TOTEBOARD::kNumOdds)
+        {
+            quills[pair + 1] = rset->get<uint32>("quills");
+        }
+    }
+
+    return quills;
+}
+
+void AddChocoboRaceQuills(const uint32 raceNo, const uint8 pair, const uint32 quills)
+{
+    TracyZoneScoped;
+
+    if (pair >= GP_SERV_COMMAND_CHOCOBO_TOTEBOARD::kNumOdds)
+    {
+        ShowWarningFmt("AddChocoboRaceQuills: pair {} is not on the toteboard", pair);
+        return;
+    }
+
+    db::preparedStmt(
+        "INSERT INTO chocobo_race_quills (race_no, pair, quills) VALUES (?, ?, ?) "
+        "ON DUPLICATE KEY UPDATE quills = quills + VALUES(quills)",
+        raceNo,
+        pair,
+        quills);
 }
 
 void DeleteLinkshellConciergeSlot(uint16 zoneId, uint8 slotIndex)
@@ -4570,115 +4773,63 @@ int32 OnAutomatonAbility(CBaseEntity* PTarget, CBaseEntity* PMob, CMobSkill* PMo
     return result.get_type(0) == sol::type::number ? result.get<int32>(0) : 0;
 }
 
-auto GetMonstrosityLuaTable(CCharEntity* PChar) -> sol::table
+auto GetMonstrosityLuaTable(const monstrosity::MonstrosityData_t& data) -> sol::table
 {
     TracyZoneScoped;
 
     // TODO: lua_monstrosity.cpp?
     auto table = lua.create_table();
 
-    table["monstrosityId"] = PChar->m_PMonstrosity->MonstrosityId;
-    table["species"]       = PChar->m_PMonstrosity->Species;
-    table["flags"]         = PChar->m_PMonstrosity->Flags;
-    table["entry_x"]       = PChar->m_PMonstrosity->EntryPos.x;
-    table["entry_y"]       = PChar->m_PMonstrosity->EntryPos.y;
-    table["entry_z"]       = PChar->m_PMonstrosity->EntryPos.z;
-    table["entry_rot"]     = PChar->m_PMonstrosity->EntryPos.rotation;
-    table["entry_zone_id"] = PChar->m_PMonstrosity->EntryZoneId;
-    table["entry_mjob"]    = PChar->m_PMonstrosity->EntryMainJob;
-    table["entry_sjob"]    = PChar->m_PMonstrosity->EntrySubJob;
+    table["monstrosityId"] = data.MonstrosityId;
+    table["species"]       = data.Species;
+    table["flags"]         = data.Flags;
+    table["entry_x"]       = data.EntryPos.x;
+    table["entry_y"]       = data.EntryPos.y;
+    table["entry_z"]       = data.EntryPos.z;
+    table["entry_rot"]     = data.EntryPos.rotation;
+    table["entry_zone_id"] = data.EntryZoneId;
+    table["entry_mjob"]    = data.EntryMainJob;
+    table["entry_sjob"]    = data.EntrySubJob;
 
+    // Keys stay 0-based to match the C++ arrays.
+    const auto toTable = [](const auto& values) -> sol::table
     {
-        std::size_t idx = 0;
-        table["levels"] = lua.create_table();
-        for (auto entry : PChar->m_PMonstrosity->levels)
+        auto out = lua.create_table();
+        for (std::size_t idx = 0; idx < values.size(); ++idx)
         {
-            table["levels"][idx++] = entry;
+            out[idx] = values[idx];
         }
-    }
 
-    {
-        std::size_t idx    = 0;
-        table["instincts"] = lua.create_table();
-        for (auto entry : PChar->m_PMonstrosity->instincts)
-        {
-            table["instincts"][idx++] = entry;
-        }
-    }
+        return out;
+    };
 
-    {
-        std::size_t idx   = 0;
-        table["variants"] = lua.create_table();
-        for (auto entry : PChar->m_PMonstrosity->variants)
-        {
-            table["variants"][idx++] = entry;
-        }
-    }
+    table["levels"]    = toTable(data.levels);
+    table["instincts"] = toTable(data.instincts);
+    table["variants"]  = toTable(data.variants);
 
     return table;
 }
 
-void SetMonstrosityLuaTable(CCharEntity* PChar, sol::table table)
+void SetMonstrosityLuaTable(monstrosity::MonstrosityData_t& data, sol::table table)
 {
     TracyZoneScoped;
 
-    if (table["monstrosityId"].valid())
-    {
-        PChar->m_PMonstrosity->MonstrosityId = table.get<uint8>("monstrosityId");
-    }
-
-    if (table["species"].valid())
-    {
-        PChar->m_PMonstrosity->Species = table.get<uint16>("species");
-    }
-
-    if (table["flags"].valid())
-    {
-        PChar->m_PMonstrosity->Flags = table.get<uint16>("flags");
-    }
-
-    if (table["entry_x"].valid())
-    {
-        PChar->m_PMonstrosity->EntryPos.x = table.get<float>("entry_x");
-    }
-
-    if (table["entry_y"].valid())
-    {
-        PChar->m_PMonstrosity->EntryPos.y = table.get<float>("entry_y");
-    }
-
-    if (table["entry_z"].valid())
-    {
-        PChar->m_PMonstrosity->EntryPos.z = table.get<float>("entry_z");
-    }
-
-    if (table["entry_rot"].valid())
-    {
-        PChar->m_PMonstrosity->EntryPos.rotation = table.get<uint8>("entry_rot");
-    }
-
-    if (table["entry_zone_id"].valid())
-    {
-        PChar->m_PMonstrosity->EntryZoneId = table.get<uint16>("entry_zone_id");
-    }
-
-    if (table["entry_mjob"].valid())
-    {
-        PChar->m_PMonstrosity->EntryMainJob = table.get<uint8>("entry_mjob");
-    }
-
-    if (table["entry_sjob"].valid())
-    {
-        PChar->m_PMonstrosity->EntrySubJob = table.get<uint8>("entry_sjob");
-    }
+    data.MonstrosityId     = table.get_or<uint8>("monstrosityId", data.MonstrosityId);
+    data.Species           = table.get_or<uint16>("species", data.Species);
+    data.Flags             = table.get_or<uint16>("flags", data.Flags);
+    data.EntryPos.x        = table.get_or<float>("entry_x", data.EntryPos.x);
+    data.EntryPos.y        = table.get_or<float>("entry_y", data.EntryPos.y);
+    data.EntryPos.z        = table.get_or<float>("entry_z", data.EntryPos.z);
+    data.EntryPos.rotation = table.get_or<uint8>("entry_rot", data.EntryPos.rotation);
+    data.EntryZoneId       = table.get_or<uint16>("entry_zone_id", data.EntryZoneId);
+    data.EntryMainJob      = table.get_or<uint8>("entry_mjob", data.EntryMainJob);
+    data.EntrySubJob       = table.get_or<uint8>("entry_sjob", data.EntrySubJob);
 
     if (table["levels"].valid())
     {
         for (const auto& [keyObj, valObj] : table.get<sol::table>("levels"))
         {
-            uint8 key = keyObj.as<uint8>();
-            uint8 val = valObj.as<uint8>();
-            PChar->m_PMonstrosity->levels[key] |= val;
+            data.levels.at(keyObj.as<uint8>()) = valObj.as<uint8>();
         }
     }
 
@@ -4686,9 +4837,7 @@ void SetMonstrosityLuaTable(CCharEntity* PChar, sol::table table)
     {
         for (const auto& [keyObj, valObj] : table.get<sol::table>("instincts"))
         {
-            uint8 key = keyObj.as<uint8>();
-            uint8 val = valObj.as<uint8>();
-            PChar->m_PMonstrosity->instincts[key] |= val;
+            data.instincts.at(keyObj.as<uint8>()) |= valObj.as<uint8>();
         }
     }
 
@@ -4696,30 +4845,8 @@ void SetMonstrosityLuaTable(CCharEntity* PChar, sol::table table)
     {
         for (const auto& [keyObj, valObj] : table.get<sol::table>("variants"))
         {
-            uint8 key = keyObj.as<uint8>();
-            uint8 val = valObj.as<uint8>();
-            PChar->m_PMonstrosity->variants[key] |= val;
+            data.variants.at(keyObj.as<uint8>()) |= valObj.as<uint8>();
         }
-    }
-}
-
-void OnMonstrosityUpdate(CCharEntity* PChar)
-{
-    TracyZoneScoped;
-
-    sol::function onMonstrosityUpdate = lua["xi"]["monstrosity"]["onMonstrosityUpdate"];
-    if (!onMonstrosityUpdate.valid())
-    {
-        ShowError("luautils::OnMonstrosityUpdate");
-        return;
-    }
-
-    auto result = onMonstrosityUpdate(PChar, GetMonstrosityLuaTable(PChar));
-    if (!result.valid())
-    {
-        sol::error err = result;
-        ShowError("luautils::OnMonstrosityUpdate: %s", err.what());
-        return;
     }
 }
 
@@ -4730,7 +4857,7 @@ void OnMonstrosityReturnToEntrance(CCharEntity* PChar)
     sol::function onMonstrosityReturnToEntrance = lua["xi"]["monstrosity"]["onMonstrosityReturnToEntrance"];
     if (!onMonstrosityReturnToEntrance.valid())
     {
-        ShowError("luautils::retuonMonstrosityReturnToEntrancernToEntrance");
+        ShowError("luautils::onMonstrosityReturnToEntrance: function not found");
         return;
     }
 

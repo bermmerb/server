@@ -1,4 +1,4 @@
-﻿/*
+/*
 ===========================================================================
 
   Copyright (c) 2010-2015 Darkstar Dev Teams
@@ -76,7 +76,7 @@ public:
     void printToPlayer(const std::string& message, const sol::object& messageTypeObj, const sol::object& nameObj);
     void printToArea(const std::string& message, const sol::object& arg1, const sol::object& arg2, const sol::object& arg3, const sol::object& arg4);
     void messageBasic(uint16 messageID, const sol::object& p0, const sol::object& p1, const sol::object& target);
-    void messageName(uint16 messageID, const sol::object& entity, const sol::object& p0, const sol::object& p1, const sol::object& p2, const sol::object& p3, const sol::object& chat, const sol::object& sender);
+    void messageName(uint16 messageID, const sol::object& entity, const sol::object& p0, const sol::object& p1, const sol::object& p2, const sol::object& p3, const sol::object& chat, const sol::object& sender, const sol::object& showSender);
     void messagePublic(uint16 messageID, const CLuaBaseEntity* PEntity, const sol::object& arg2, const sol::object& arg3);
     void messageSpecial(uint16 messageID, sol::variadic_args va);
     void messageSystem(MsgStd messageID, const sol::object& p0, const sol::object& p1);
@@ -409,8 +409,12 @@ public:
     void setMonstrosityData(sol::table table);
     bool getBelligerencyFlag();
     void setBelligerencyFlag(bool flag);
+    void changeMonstrositySpecies(uint16 speciesCode);
     auto getMonstrositySize() -> uint8;
     void setMonstrosityEntryData(float x, float y, float z, uint8 rot, uint16 zoneId, uint8 mjob, uint8 sjob);
+    auto getMonstrosityShop() -> sol::table;
+    auto getMonstrosityExits(xi::ZoneId zoneId) -> sol::table;
+    auto isMonstrosityPassageZone(xi::ZoneId zoneId) -> bool;
 
     // Player Titles and Fame
     uint16 getTitle();

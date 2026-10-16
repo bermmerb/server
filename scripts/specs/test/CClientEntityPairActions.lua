@@ -40,6 +40,13 @@ end
 function CClientEntityPairActions:useAbility(target, abilityId)
 end
 
+---Use a Monstrosity TP move on a target
+---@param target CBaseEntity Target entity
+---@param datSkillId integer Client-facing DAT skill id (e.g. 343 for Fireball)
+---@return nil
+function CClientEntityPairActions:useMonsterSkill(target, datSkillId)
+end
+
 ---Change the current target
 ---@param target CBaseEntity New target entity
 ---@return nil
@@ -87,6 +94,36 @@ end
 ---Leave the current party
 ---@return nil
 function CClientEntityPairActions:leaveParty()
+end
+
+---Request to join a player's party
+---@param player CBaseEntity Player to send the request to
+---@return nil
+function CClientEntityPairActions:requestParty(player)
+end
+
+---Withdraw a request to join a player's party
+---@param player CBaseEntity Player the request was sent to
+---@return nil
+function CClientEntityPairActions:cancelPartyRequest(player)
+end
+
+---Toggle the accepting party requests flag
+---@param enabled boolean
+---@return nil
+function CClientEntityPairActions:setAcceptingRequests(enabled)
+end
+
+---Toggle the seeking party flag
+---@param enabled boolean
+---@return nil
+function CClientEntityPairActions:setSeekingParty(enabled)
+end
+
+---Add a player to the blacklist
+---@param player CBaseEntity Player to blacklist
+---@return nil
+function CClientEntityPairActions:blacklistAdd(player)
 end
 
 ---Level sync the party to a member (caller must be party leader)

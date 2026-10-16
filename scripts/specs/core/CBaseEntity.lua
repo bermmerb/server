@@ -57,8 +57,9 @@ end
 ---@param p3 integer?
 ---@param chat integer?
 ---@param sender CBaseEntity? Speaker for private messages, separate from the named entity.
+---@param showSender boolean? Print the speaker's name, defaults to true when a sender is given.
 ---@return nil
-function CBaseEntity:messageName(messageID, entity, p0, p1, p2, p3, chat, sender)
+function CBaseEntity:messageName(messageID, entity, p0, p1, p2, p3, chat, sender, showSender)
 end
 
 ---@param messageID integer
@@ -1131,12 +1132,13 @@ function CBaseEntity:sendLinkshellConcierge(data)
 end
 
 ---@class ChocoboRaceStats
----@field str xi.chocoboRaising.statRank?
----@field ["end"] xi.chocoboRaising.statRank?
----@field dsc xi.chocoboRaising.statRank?
----@field rcp xi.chocoboRaising.statRank?
+---@field str integer? Raw stat 0-255
+---@field ["end"] integer? Raw stat 0-255
+---@field dsc integer? Raw stat 0-255
+---@field rcp integer? Raw stat 0-255
 
 ---@class ChocoboRaceEntry
+---@field name string?
 ---@field item xi.chocoboRacing.sectionEvent?
 ---@field orders xi.chocoboRacing.order?
 ---@field size xi.chocoboRacing.jockeySize?
@@ -1152,7 +1154,7 @@ end
 ---@field type xi.chocoboRacing.sectionEvent?
 ---@field user integer? Bitmask: the acting chocobo
 ---@field targets integer? Bitmask: affected chocobos
----@field param integer? Bitmask: extra affected / type param
+---@field param integer? Bitmask: chocobos that avoided it
 
 ---@class ChocoboRaceSection
 ---@field from integer[] Per-chocobo positions at section start
@@ -1672,6 +1674,11 @@ end
 function CBaseEntity:setBelligerencyFlag(flag)
 end
 
+---@param speciesCode integer
+---@return nil
+function CBaseEntity:changeMonstrositySpecies(speciesCode)
+end
+
 ---@nodiscard
 ---@return integer
 function CBaseEntity:getMonstrositySize()
@@ -1686,6 +1693,23 @@ end
 ---@param sjob integer
 ---@return nil
 function CBaseEntity:setMonstrosityEntryData(x, y, z, rot, zoneId, mjob, sjob)
+end
+
+---@nodiscard
+---@return table<integer, table<integer, { monSpecies: xi.monstrositySpecies?, monVariant: xi.monstrosityVariant?, infamyCost: integer, requirements: { [1]: xi.monstrositySpecies, [2]: integer }[] }>>
+function CBaseEntity:getMonstrosityShop()
+end
+
+---@nodiscard
+---@param zoneId xi.zone
+---@return { [1]: number, [2]: number, [3]: number, [4]: integer }[]
+function CBaseEntity:getMonstrosityExits(zoneId)
+end
+
+---@nodiscard
+---@param zoneId xi.zone
+---@return boolean
+function CBaseEntity:isMonstrosityPassageZone(zoneId)
 end
 
 ---@nodiscard

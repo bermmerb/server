@@ -25,6 +25,7 @@
 #include "entities/char_entity.h"
 #include "enums/msg_basic.h"
 #include "ipc_client.h"
+#include "monstrosity.h"
 #include "packets/c2s/validation.h"
 #include "packets/s2c/0x009_message.h"
 #include "packets/s2c/0x029_battle_message.h"
@@ -60,6 +61,12 @@ void GP_CLI_COMMAND_GROUP_SOLICIT_REQ::process(MapSession* PSession, CCharEntity
         return;
     }
 
+    if (!monstrosity::CanParty(PInviter))
+    {
+        PInviter->pushPacket<GP_SERV_COMMAND_MESSAGE>(PInviter, 0, 0, MsgStd::CannotInvite);
+        return;
+    }
+
     switch (this->Kind)
     {
         case PartyKind::Party:
@@ -92,9 +99,9 @@ void GP_CLI_COMMAND_GROUP_SOLICIT_REQ::process(MapSession* PSession, CCharEntity
                     ShowDebug("%s sent party invite to %s", PInviter->getName(), PInvitee->getName());
 
                     // make sure invitee isn't dead or in jail, they aren't a party member and don't already have an invite pending, and your party is not full
-                    if (PInvitee->isDead() || jailutils::InPrison(PInvitee) || PInvitee->InvitePending.entity.UniqueNo != 0 || PInvitee->PParty != nullptr)
+                    if (PInvitee->isDead() || jailutils::InPrison(PInvitee) || !monstrosity::CanParty(PInvitee) || PInvitee->InvitePending.entity.UniqueNo != 0 || PInvitee->PParty != nullptr)
                     {
-                        ShowDebug("%s is dead, in jail, has a pending invite, or is already in a party", PInvitee->getName());
+                        ShowDebug("%s is dead, in jail, a Monipulator, has a pending invite, or is already in a party", PInvitee->getName());
                         PInviter->pushPacket<GP_SERV_COMMAND_MESSAGE>(PInviter, 0, 0, MsgStd::CannotInvite);
                         break;
                     }
