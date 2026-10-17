@@ -94,6 +94,11 @@ Application::Application(const ApplicationConfig& appConfig, int argc, char** ar
 
 Application::~Application()
 {
+    // Members are only destroyed after this body has run, which is after logging::ShutDown() below.
+    // Tear the engine down first, while logging still works: its destructor logs (e.g. the map closing
+    // the sessions of characters that are still online).
+    engine_.reset();
+
     tryRestoreTimerResolution();
     tryRestoreQuickEditMode();
     logging::ShutDown();
