@@ -29,8 +29,12 @@ entity.onTrigger = function(player, npc)
 end
 
 entity.onEventFinish = function(player, csid, option, npc)
-    -- ASSAULT
-    if csid == 209 and option == 1 then
+    -- ASSAULT: the event is only told the price; delCurrency stops at 0.
+    if
+        csid == 209 and
+        option == 1 and
+        player:getCurrency('imperial_standing') >= 50
+    then
         player:delCurrency('imperial_standing', 50)
         npcUtil.giveKeyItem(player, xi.keyItem.ASSAULT_ARMBAND)
     end

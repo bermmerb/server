@@ -360,6 +360,11 @@ xi.campaign.sigilOnEventFinish = function(player, csid, option, npc)
                 end
             end
 
+            -- The menu is only told the player's notes, and delCurrency stops at 0.
+            if player:getCurrency('allied_notes') < bonusCost then
+                return
+            end
+
             local duration        = 10800 + ((15 * xi.campaign.getMedalRank(player)) * 60) -- 3hrs +15 min per medal (minimum 3hr 15 min with 1st medal)
             local subPower        = 35 -- Sets % trigger for regen/refresh. Static at minimum value (35%) for now.
             -- Selected Effect Mask:

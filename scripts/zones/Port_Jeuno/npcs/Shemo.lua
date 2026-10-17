@@ -57,7 +57,12 @@ entity.onEventFinish = function(player, csid, option, npc)
             dellseals = addnum * 2
         end
 
-        if inSeal >= 0 and outSeal >= 0 then
+        -- The menu is only told the stored seals; delSeals stops at 0, so check before exchanging.
+        if
+            inSeal >= 0 and
+            outSeal >= 0 and
+            player:getSeals(outSeal) >= dellseals
+        then
             player:delSeals(dellseals, outSeal)
             player:addSeals(addnum, inSeal)
             player:incrementCharVar('ShemoTrades', 1)
