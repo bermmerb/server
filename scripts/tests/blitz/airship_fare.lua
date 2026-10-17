@@ -181,6 +181,16 @@ describe('Airship fare', function()
         expectGil(player, 1000 - fare)
     end)
 
+    it('boards a player who has exactly the fare left at boarding', function()
+        local berth  = berths.windurst
+        local player = passenger(berth, fare)
+
+        departure(player, berth)
+
+        expectBoarded(player, berth)
+        expectGil(player, 0)
+    end)
+
     it('takes a paid fare for one trip only', function()
         local berth  = berths.windurst
         local player = passenger(berth, 1000)

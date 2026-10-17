@@ -39,4 +39,29 @@ describe('Home Point teleport fee', function()
         player.assert:inZone(xi.zone.BASTOK_MARKETS)
         expectGil(500)
     end)
+
+    it('warps a player who has exactly the discounted fee', function()
+        player:addKeyItem(xi.keyItem.RHAPSODY_IN_WHITE) -- 80% off: 100 gil
+        player:setGil(100)
+
+        player.entities:gotoAndTrigger('HomePoint#1')
+        player.events:expect({ eventId = event, updates = { teleport }, finishOption = teleport })
+
+        player.assert:inZone(xi.zone.BASTOK_MARKETS)
+        expectGil(0)
+    end)
+
+    it('warps for free between Home Points of the same nation', function()
+        local northernSandoria = 3 -- Northern San d'Oria #1 (group 1)
+        local hop              = 2 + northernSandoria * 65536
+
+        player:addTeleport(xi.teleport.type.HOMEPOINT, northernSandoria % 32, math.floor(northernSandoria / 32))
+        player:setGil(0)
+
+        player.entities:gotoAndTrigger('HomePoint#1')
+        player.events:expect({ eventId = event, updates = { hop }, finishOption = hop })
+
+        player.assert:inZone(xi.zone.NORTHERN_SAN_DORIA)
+        expectGil(0)
+    end)
 end)
