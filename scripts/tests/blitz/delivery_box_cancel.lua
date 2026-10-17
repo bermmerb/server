@@ -1,6 +1,6 @@
 -----------------------------------
--- Delivery box: a Cancel never destroys what the sender put in the box
--- src/map/utils/dboxutils.cpp CancelSendingItem, driven by raw 0x04D packets
+-- Delivery box: a Cancel or a Get never destroys what is in the box
+-- src/map/utils/dboxutils.cpp CancelSendingItem and TakeItemFromCell, driven by raw 0x04D packets
 -----------------------------------
 local ffi = require('ffi')
 
@@ -41,6 +41,9 @@ local box =
     INCOMING = 1,
     OUTGOING = 2,
 }
+
+-- the wallet's stack size (src/map/items/item_currency.cpp)
+local gilCap = 999999999
 
 describe('Delivery box', function()
     ---@type CClientEntityPair
@@ -260,6 +263,39 @@ describe('Delivery box', function()
             cancel()
             pbx(sender, cmd.GET, box.OUTGOING, 0)
             assert(sender:getGil() == 900, string.format('the sender got back gil the recipient already took: %d', sender:getGil()))
+        end)
+    end)
+
+    describe('Gil past the cap', function()
+        it('keeps the gil in the outgoing box until it fits under the cap', function()
+            stage(0, 100)
+            sender:setGil(gilCap - 99)
+
+            cancel()
+            assert(sender:getGil() == gilCap - 99, string.format('expected the wallet left at %d, has %d', gilCap - 99, sender:getGil()))
+            local outbox = reopen(sender, box.OUTGOING)
+            assert(outbox[0] and outbox[0].itemId == xi.item.GIL and outbox[0].quantity == 100, 'the 100 gil should still be in outgoing slot 0')
+
+            sender:setGil(gilCap - 100)
+            cancel()
+            assert(sender:getGil() == gilCap, string.format('expected the wallet at the cap, has %d', sender:getGil()))
+            assert(reopen(sender, box.OUTGOING).count == 0, 'the gil is still in the outgoing box')
+        end)
+
+        it('keeps received gil in the incoming box until it fits under the cap', function()
+            stage(0, 100)
+            assert(replied(pbx(sender, cmd.SEND, box.OUTGOING, 0), cmd.SEND, 1), 'the gil was not sent')
+            recipient:setGil(gilCap - 99)
+
+            receive()
+            assert(not replied(pbx(recipient, cmd.GET, box.INCOMING, 0), cmd.GET, 1), 'the gil should not be handed over past the cap')
+            assert(recipient:getGil() == gilCap - 99, string.format('expected the wallet left at %d, has %d', gilCap - 99, recipient:getGil()))
+            local inbox = reopen(recipient, box.INCOMING)
+            assert(inbox[0] and inbox[0].itemId == xi.item.GIL and inbox[0].quantity == 100, 'the 100 gil should still be in incoming slot 0')
+
+            recipient:setGil(gilCap - 100)
+            assert(replied(pbx(recipient, cmd.GET, box.INCOMING, 0), cmd.GET, 1), 'the gil was not handed over once it fit')
+            assert(recipient:getGil() == gilCap, string.format('expected the wallet at the cap, has %d', recipient:getGil()))
         end)
     end)
 end)
