@@ -19,7 +19,7 @@ entity.onEventFinish = function(player, csid, option, npc)
         local xPos = player:getXPos()
 
         if xPos >= -58 and xPos <= -55 then
-            player:delGil(200)
+            xi.transport.payAirshipFareAtGate(player)
         end
     end
 end

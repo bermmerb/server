@@ -61,8 +61,11 @@ entity.onEventFinish = function(player, csid, option, npc)
             cost = 4000
         end
 
+        if cost > 0 and not player:delGil(cost) then
+            return
+        end
+
         player:setNation(newNation)
-        player:setGil(player:getGil() - cost)
         player:setRankPoints(0)
 
         -- Remove Expeditionary Force insignias

@@ -17,9 +17,8 @@ entity.onTrigger = function(player, npc)
 end
 
 entity.onEventFinish = function(player, csid, option, npc)
-    if csid == 221 and option == 333 then
+    if csid == 221 and option == 333 and player:delGil(100) then
         player:addKeyItem(xi.keyItem.FERRY_TICKET)
-        player:delGil(100)
     end
 end
 

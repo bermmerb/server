@@ -69,7 +69,10 @@ zoneObject.onTransportEvent = function(player, prevZoneId, transportName)
         return
     end
 
-    if not player:hasKeyItem(berth.keyItem) then
+    if
+        not player:hasKeyItem(berth.keyItem) or
+        not xi.transport.takeAirshipFare(player)
+    then
         player:startEvent(berth.ashore)
         return
     end
