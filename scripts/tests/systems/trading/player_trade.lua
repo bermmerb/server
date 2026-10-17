@@ -357,8 +357,20 @@ describe('PlayerTradeTransaction', function()
 
         p1:setGil(5000)
         p2:setGil(0)
-        p1:createShop(1)
-        p1:addShopItem(gear, 1000)
+
+        -- Shop packets need a shop opened by an NPC near the buyer
+        local vendor = GetZone(p1:getZoneID()):insertDynamicEntity({
+            objtype   = xi.objType.NPC,
+            name      = 'Trade_Test_Vendor',
+            x         = p1:getXPos(),
+            y         = p1:getYPos(),
+            z         = p1:getZPos(),
+            onTrigger = function(player, npc)
+                player:createShop(1)
+                player:addShopItem(gear, 1000)
+            end,
+        })
+        p1.actions:trigger(vendor)
 
         openTrade()
         p1.actions:tradeOffer(0, 0, xi.item.GIL, 5000)

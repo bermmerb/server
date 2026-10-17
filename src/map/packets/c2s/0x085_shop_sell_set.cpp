@@ -93,6 +93,7 @@ auto GP_CLI_COMMAND_SHOP_SELL_SET::validate(MapSession* PSession, const CCharEnt
     return PacketValidator(PChar)
         .blockedBy({ BlockedState::InEvent, BlockedState::Crafting })
         .requiresPriorPacket(PacketC2S::GP_CLI_COMMAND_SHOP_SELL_REQ)
+        .hasOpenShop()
         .mustEqual(this->SellFlag, 1, "SellFlag not 1");
 }
 

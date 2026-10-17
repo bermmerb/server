@@ -26,8 +26,20 @@
 #include "item_container.h"
 #include "items/item_linkshell.h"
 #include "status_effect_container.h"
+#include "trade_container.h"
 #include "utils/charutils.h"
 #include "utils/jailutils.h"
+#include "utils/zoneutils.h"
+
+namespace
+{
+
+// A shop only opens when the character talks to or trades with its NPC within 6.0' (0x01a_action, 0x036_item_transfer).
+// No packet tells the server when the window closes; the client closes it when the character walks away.
+// Some merchants keep walking their path while it is open (Tomasa in Metalworks walks 10'), so leave room for that.
+constexpr float MaxShopVendorDistance = 20.0f;
+
+} // namespace
 
 auto PacketValidator::blockedBy(const magic_enum::containers::bitset<BlockedState> states) -> PacketValidator&
 {
@@ -271,6 +283,30 @@ auto PacketValidator::requiresPriorPacket(PacketC2S expectedPacketId) -> PacketV
     if (PChar_->m_LastPacketType != static_cast<uint16>(expectedPacketId))
     {
         result_.addError(std::format("Expected prior packet {:#05x}, got {:#05x}.", static_cast<uint16>(expectedPacketId), PChar_->m_LastPacketType));
+    }
+
+    return *this;
+}
+
+auto PacketValidator::hasOpenShop() -> PacketValidator&
+{
+    if (!result_.valid())
+    {
+        return *this;
+    }
+
+    // createShop() remembers the NPC the shop was opened from; it is 0 until a shop is opened
+    const uint32 vendorId = PChar_->Container->getShopVendorId();
+    const auto*  PVendor  = vendorId != 0 ? zoneutils::GetEntity(vendorId, TYPE_NPC) : nullptr;
+    if (PVendor == nullptr || PVendor->loc.zone != PChar_->loc.zone)
+    {
+        result_.addError("Character does not have a shop open.");
+        return *this;
+    }
+
+    if (const float dist = distance(PChar_->loc.p, PVendor->loc.p); dist > MaxShopVendorDistance)
+    {
+        result_.addError(std::format("Character is {:.1f}y from shop NPC {}.", dist, PVendor->getName()));
     }
 
     return *this;
