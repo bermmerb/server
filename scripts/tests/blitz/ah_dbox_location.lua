@@ -79,10 +79,10 @@ local feather  = xi.item.CHOCOBO_FEATHER
 local price    = 100 -- gil asked for the feather
 local proceeds = 300 -- gil waiting in the delivery box, as after an auction sale
 
--- data/zones/southern_san_doria/npcs.yaml and bastok_markets_s/npcs.yaml
-local counterId   = 17719411 -- Auction Counter, Southern San d'Oria
-local lanqueronId = 17719408 -- item deliverer next to that auction house
-local karlotteId  = 17134084 -- item deliverer, Bastok Markets [S] (no auction house there)
+-- By name, not id: an upstream sync can renumber a zone's NPCs (data/zones/*/npcs.yaml)
+local counterName   = 'Auction_Counter' -- Southern San d'Oria: any of the three at its auction house
+local lanqueronName = 'Lanqueron'       -- item deliverer next to that auction house
+local karlotteName  = 'Karlotte'        -- item deliverer, Bastok Markets [S] (no auction house there)
 
 -- By the Northern San d'Oria gate, about 80 yalms from every counter
 local farSpot = { x = 0.0, y = -8.4, z = 50.0 }
@@ -260,7 +260,7 @@ describe('Auction House location', function()
         seller = spawnIn(xi.zone.SOUTHERN_SAN_DORIA)
         seller:setGil(10000)
         seller:addItem(feather)
-        counter = seller.entities:get(counterId)
+        counter = seller.entities:get(counterName)
     end)
 
     it('takes nothing from a character that never opened the menu, at the counter or by the gate', function()
@@ -413,7 +413,7 @@ describe('Delivery box location', function()
         recipient = spawnIn(xi.zone.SOUTHERN_SAN_DORIA)
         player:setGil(1000)
         player:addItem(feather)
-        lanqueron = player.entities:get(lanqueronId)
+        lanqueron = player.entities:get(lanqueronName)
     end)
 
     it('opens no receive box in the street, even next to the item deliverer', function()
@@ -505,7 +505,7 @@ describe('Delivery box location', function()
     it('sends through the item deliverer in Bastok Markets [S], which has no auction house', function()
         player = spawnIn(xi.zone.BASTOK_MARKETS_S)
         player:addItem(feather)
-        local karlotte = player.entities:get(karlotteId)
+        local karlotte = player.entities:get(karlotteName)
         player.entities:moveTo(karlotte)
         openAtDeliverer(karlotte)
 
