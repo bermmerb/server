@@ -21,11 +21,48 @@
 
 #include "0x04d_pbx.h"
 
+#include "common/utils.h"
+
 #include "entities/char_entity.h"
 #include "map_session.h"
 #include "packets/c2s/validation.h"
 #include "utils/dboxutils.h"
 #include "utils/zoneutils.h"
+
+namespace
+{
+
+// The NPCs next to the auction houses open the send box when talked to within 6.0' (0x01a_action.cpp), and no packet
+// tells the server when the client closes it. How far the client lets the character walk off with it open is not
+// documented, so leave room for a few steps.
+constexpr float MaxDeliveryNpcDistance = 20.0f;
+
+// The whole delivery box is in the Mog House and with a Nomad Moogle (mog menu zones, the Mog Garden too).
+// Anywhere else only the NPCs next to the auction houses offer it, and they only send.
+auto canUseDeliveryBoxHere(const CCharEntity* PChar, const GP_CLI_COMMAND_PBX_COMMAND command) -> bool
+{
+    if (zoneutils::IsResidentialArea(PChar) || PChar->m_GMlevel > 0 || PChar->loc.zone->CanUseMisc(xi::ZoneMisc::Mogmenu))
+    {
+        return true;
+    }
+
+    switch (command)
+    {
+        case GP_CLI_COMMAND_PBX_COMMAND::PostClose:
+            return true; // The client waits for the answer and stays stuck in the menu without it (#3639)
+        case GP_CLI_COMMAND_PBX_COMMAND::PostOpen:
+            return false; // The receive box is never offered here
+        default:
+            break;
+    }
+
+    // Zoning reloads the character, which closes the box and forgets the NPC
+    const auto* PNpc = PChar->deliveryNpc_.resolve();
+    return dboxutils::IsSendBoxOpen(PChar) && PNpc != nullptr && PNpc->loc.zone == PChar->loc.zone &&
+           distance(PChar->loc.p, PNpc->loc.p) <= MaxDeliveryNpcDistance;
+}
+
+} // namespace
 
 auto GP_CLI_COMMAND_PBX::validate(MapSession* PSession, const CCharEntity* PChar) const -> PacketValidationResult
 {
@@ -182,9 +219,9 @@ void GP_CLI_COMMAND_PBX::process(MapSession* PSession, CCharEntity* PChar) const
 {
     const auto charName = PChar->getName();
 
-    if (!zoneutils::IsResidentialArea(PChar) && PChar->m_GMlevel == 0 && !PChar->loc.zone->CanUseMisc(xi::ZoneMisc::AuctionHouse) && !PChar->loc.zone->CanUseMisc(xi::ZoneMisc::Mogmenu))
+    if (!canUseDeliveryBoxHere(PChar, static_cast<GP_CLI_COMMAND_PBX_COMMAND>(this->Command)))
     {
-        ShowWarningFmt("DBOX: {} ({}) is trying to use the delivery box in a disallowed zone [{}]", charName, PChar->id, PChar->loc.zone->getName());
+        ShowWarningFmt("DBOX: {} ({}) is trying to use the delivery box where it is not offered [{}]", charName, PChar->id, PChar->loc.zone->getName());
         return;
     }
 

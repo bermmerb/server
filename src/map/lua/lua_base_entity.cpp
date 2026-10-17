@@ -2781,6 +2781,8 @@ void CLuaBaseEntity::sendMenu(uint32 menu)
             PChar->pushPacket<GP_SERV_COMMAND_SHOP_LIST>(PChar);
             break;
         case 3:
+            // 0x04E is only taken near the counter the menu was opened from (none for !ah)
+            PChar->auctionNpc_ = EntityId(PChar->isInEvent() ? PChar->currentEvent->targetEntity : PChar->eventPreparation->targetEntity);
             PChar->pushPacket<GP_SERV_COMMAND_AUC>(GP_CLI_COMMAND_AUC_COMMAND::Open);
             break;
         default:
@@ -2880,6 +2882,9 @@ void CLuaBaseEntity::openSendBox() const
     if (auto* PChar = dynamic_cast<CCharEntity*>(m_PBaseEntity))
     {
         dboxutils::OpenSendBox(PChar);
+
+        // Outside the Mog House and mog menu zones 0x04D is only taken near the NPC that opened the box
+        PChar->deliveryNpc_ = EntityId(PChar->isInEvent() ? PChar->currentEvent->targetEntity : PChar->eventPreparation->targetEntity);
     }
 }
 
