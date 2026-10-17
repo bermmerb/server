@@ -21,17 +21,56 @@
 
 #include "0x04e_auc.h"
 
+#include "common/utils.h"
+
 #include "data/enums/zone_misc.h"
 #include "entities/char_entity.h"
 #include "packets/c2s/validation.h"
 #include "utils/auctionutils.h"
 #include "utils/jailutils.h"
 
+namespace
+{
+
+// The menu only opens by talking to an auction counter within 6.0' (0x01a_action.cpp), and no packet tells the server
+// when the client closes it. How far the client lets the character walk off with it open is not documented, so leave
+// room for a few steps.
+constexpr float MaxAuctionCounterDistance = 20.0f;
+
+// Empty if the character is near the auction counter it opened the menu from.
+auto auctionCounterError(const CCharEntity* PChar) -> std::string
+{
+    // !ah opens the menu anywhere, with no counter
+    if (PChar->m_GMlevel > 0)
+    {
+        return {};
+    }
+
+    // Zoning, the Mog House included, reloads the character, which forgets the counter
+    const auto* PCounter = PChar->auctionNpc_.resolve();
+    if (PCounter == nullptr || PCounter->loc.zone != PChar->loc.zone)
+    {
+        return "Character has not opened the auction house at a counter in this zone.";
+    }
+
+    if (const float dist = distance(PChar->loc.p, PCounter->loc.p); dist > MaxAuctionCounterDistance)
+    {
+        return std::format("Character is {:.1f}y from auction counter {}.", dist, PCounter->getName());
+    }
+
+    return {};
+}
+
+} // namespace
+
 auto GP_CLI_COMMAND_AUC::validate(MapSession* PSession, const CCharEntity* PChar) const -> PacketValidationResult
 {
+    const auto counterError = auctionCounterError(PChar);
+
     auto pv = PacketValidator(PChar)
                   .blockedBy({ BlockedState::InEvent })
                   .hasZoneMiscFlag(xi::ZoneMisc::AuctionHouse)
+                  .mustEqual(counterError.empty(), true, counterError)
                   .mustEqual(jailutils::InPrison(PChar), false, "Character in jail")
                   .oneOf<GP_CLI_COMMAND_AUC_COMMAND>(this->Command)
                   .mustEqual(this->Result, 0, "Result not 0")

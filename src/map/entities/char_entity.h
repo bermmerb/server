@@ -556,6 +556,8 @@ public:
     bool                    retriggerLatents; // used to retrigger all latent effects if some event requires them to be retriggered
 
     EntityId        guildShopNpc_{}; // Lua-driven guild shop NPC the PC last opened
+    EntityId        auctionNpc_{};   // Auction counter the PC last opened the auction house menu from (sendMenu)
+    EntityId        deliveryNpc_{};  // NPC that last opened the PC's send box (openSendBox)
     CItemContainer* getStorage(uint8 locationId) const;
 
     CTradeContainer* TradeContainer; // Container used specifically for trading.
