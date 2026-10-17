@@ -122,7 +122,11 @@ local function giveAllTemporaryItemsPrefered(player)
             local itemId = itemsTable[option].item
 
             if itemId ~= nil then
-                if not player:hasItem(itemId, xi.inventoryLocation.TEMPITEMS) then
+                -- Pay per item as giveAllTemporaryItems does: delCurrency stops at 0.
+                if
+                    not player:hasItem(itemId, xi.inventoryLocation.TEMPITEMS) and
+                    player:getCurrency('nyzul_isle_assault_point') >= itemsTable[option].cost
+                then
                     player:addTempItem(itemId)
                     player:messageSpecial(ID.text.TEMP_ITEM_OBTAINED, itemId)
                     player:delCurrency('nyzul_isle_assault_point', itemsTable[option].cost)

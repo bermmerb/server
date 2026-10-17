@@ -161,8 +161,10 @@ local function updateCruorCosts(player, confluxInfo)
     updatedConfluxInfo[2] = confluxInfo[2]
     updatedConfluxInfo[3] = {}
 
+    -- Round to whole cruor, which is all the client and delCurrency deal in (with two
+    -- abyssites 50 * discount is 30.000000000000004), so a balance check matches the price shown.
     for i = 1, #confluxInfo[3] do
-        updatedConfluxInfo[3][i] = confluxInfo[3][i] * discount
+        updatedConfluxInfo[3][i] = math.floor(confluxInfo[3][i] * discount + 0.5)
     end
 
     return updatedConfluxInfo
@@ -228,7 +230,13 @@ xi.conflux.confluxEventFinish = function(player, csid, option, npc)
         option == 1 and
         confluxInfo[1] ~= 8
     then
-        player:delCurrency('cruor', confluxInfo[3][confluxInfo[1] + 1])
+        -- The client is only shown the price; delCurrency stops at 0, so check before activating.
+        local activationCost = confluxInfo[3][confluxInfo[1] + 1]
+        if player:getCurrency('cruor') < activationCost then
+            return
+        end
+
+        player:delCurrency('cruor', activationCost)
         player:addTeleport(xi.teleport.type.ABYSSEA_CONFLUX, confluxInfo[1], zoneMaskID[player:getZoneID()])
     end
 end
