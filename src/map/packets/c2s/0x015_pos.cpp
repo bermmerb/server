@@ -53,13 +53,17 @@ void GP_CLI_COMMAND_POS::process(MapSession* PSession, CCharEntity* PChar) const
     const uint16 newTargID   = this->facetarget;
     const uint8  newRotation = this->dir;
 
+    // A KO'd character lies where it fell until it is raised or returns to its home point.
+    // The client keeps sending this packet while KO'd, so it is still taken, but its position and heading are not.
+    const bool isKO = PChar->isDead();
+
     // clang-format off
     const bool moved =
-        PChar->loc.p.x != newX ||
-        PChar->loc.p.y != newY ||
-        PChar->loc.p.z != newZ ||
-        PChar->m_TargID != newTargID ||
-        PChar->loc.p.rotation != newRotation;
+        (!isKO && (PChar->loc.p.x != newX ||
+                   PChar->loc.p.y != newY ||
+                   PChar->loc.p.z != newZ ||
+                   PChar->loc.p.rotation != newRotation)) ||
+        PChar->m_TargID != newTargID;
     // clang-format on
 
     // Cache previous location
@@ -67,12 +71,15 @@ void GP_CLI_COMMAND_POS::process(MapSession* PSession, CCharEntity* PChar) const
 
     if (!PChar->isCharmed)
     {
-        PChar->loc.p.x = newX;
-        PChar->loc.p.y = newY;
-        PChar->loc.p.z = newZ;
+        if (!isKO)
+        {
+            PChar->loc.p.x = newX;
+            PChar->loc.p.y = newY;
+            PChar->loc.p.z = newZ;
 
-        PChar->loc.p.moving   = this->MoveFlame;
-        PChar->loc.p.rotation = newRotation;
+            PChar->loc.p.moving   = this->MoveFlame;
+            PChar->loc.p.rotation = newRotation;
+        }
 
         PChar->m_TargID = newTargID;
 

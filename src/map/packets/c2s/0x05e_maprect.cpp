@@ -154,6 +154,17 @@ auto moghouseCityExit(const GP_CLI_COMMAND_MAPRECT_MYROOMEXITBIT exitBit, const 
 
 void GP_CLI_COMMAND_MAPRECT::process(MapSession* PSession, CCharEntity* PChar) const
 {
+    // A KO'd character cannot walk into a zone line. Raise and the return to the home point do not come through here.
+    // Not turned around like denyZone does: a KO'd character cannot turn either.
+    if (PChar->status == xi::Status::Normal && PChar->isDead())
+    {
+        ShowWarning("GP_CLI_COMMAND_MAPRECT: %s requested zone line %u while KO'd", PChar->getName(), this->RectID);
+
+        PChar->pushPacket<GP_SERV_COMMAND_SYSTEMMES>(0, 0, MsgStd::CouldNotEnter);
+        PChar->pushPacket<GP_SERV_COMMAND_WPOS2>(PChar, PChar->loc.p, POSMODE::RESET);
+        return;
+    }
+
     const auto startingZone = PChar->getZone();
     auto       startingPos  = PChar->loc.p;
 

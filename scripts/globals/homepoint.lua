@@ -286,6 +286,12 @@ xi.homepoint.onEventFinish = function(player, csid, option, event)
         local choice = bit.band(option, 0xFF)
 
         if choice == selection.SET_HOMEPOINT then
+            -- setHomePoint stores where the player stands, so they must still be within talk range (6 yalms) of this crystal.
+            local crystal = player:getEventTarget()
+            if crystal == nil or player:checkDistance(crystal) > 6 then
+                return
+            end
+
             player:setHomePoint()
             if zones[player:getZoneID()].text.HOMEPOINT_SET then
                 player:messageSpecial(zones[player:getZoneID()].text.HOMEPOINT_SET)
