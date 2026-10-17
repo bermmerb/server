@@ -247,6 +247,8 @@ public:
     auto hasKeyItem(xi::KeyItem keyItemId) -> PacketValidator&;
     // The previous packet received from this character must match the expected packet ID
     auto requiresPriorPacket(PacketC2S expectedPacketId) -> PacketValidator&;
+    // Character must have a shop open from an NPC in its zone, and still be near that NPC
+    auto hasOpenShop() -> PacketValidator&;
 
     // Custom validation function
     template <typename Func>

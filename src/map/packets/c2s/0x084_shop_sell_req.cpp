@@ -30,7 +30,8 @@
 auto GP_CLI_COMMAND_SHOP_SELL_REQ::validate(MapSession* PSession, const CCharEntity* PChar) const -> PacketValidationResult
 {
     return PacketValidator(PChar)
-        .blockedBy({ BlockedState::InEvent, BlockedState::Crafting });
+        .blockedBy({ BlockedState::InEvent, BlockedState::Crafting })
+        .hasOpenShop();
 }
 
 void GP_CLI_COMMAND_SHOP_SELL_REQ::process(MapSession* PSession, CCharEntity* PChar) const
