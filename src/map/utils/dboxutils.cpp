@@ -313,6 +313,13 @@ void dboxutils::CancelSendingItem(CCharEntity* PChar, GP_CLI_COMMAND_PBX_BOXNO B
     {
         CItem* PItem = PChar->UContainer->GetItem(PostWorkNo);
 
+        // Nothing was sent, so there is no delivery to call back: the stack goes back to the sender the way Get returns it
+        if (!PItem->isSent())
+        {
+            TakeItemFromCell(PChar, BoxNo, PostWorkNo);
+            return;
+        }
+
         // clang-format off
         const auto success = db::transaction([&]()
         {
@@ -347,8 +354,9 @@ void dboxutils::CancelSendingItem(CCharEntity* PChar, GP_CLI_COMMAND_PBX_BOXNO B
         });
         if (!success)
         {
+            // Only a sent record can be orphaned: an unsent row still holds the sender's stack (sent is reset when the recipient is deleted)
             const auto rset = db::preparedStmt(
-                "DELETE FROM delivery_box WHERE box = 2 AND charid = ? AND itemid = ? AND quantity = ? AND slot = ? LIMIT 1",
+                "DELETE FROM delivery_box WHERE box = 2 AND charid = ? AND itemid = ? AND quantity = ? AND slot = ? AND sent = 1 LIMIT 1",
                 PChar->id, PItem->getID(), PItem->getQuantity(), PostWorkNo);
             if (rset && rset->rowsAffected())
             {
@@ -678,6 +686,17 @@ void dboxutils::TakeItemFromCell(CCharEntity* PChar, GP_CLI_COMMAND_PBX_BOXNO Bo
         {
             PChar->pushPacket<GP_SERV_COMMAND_PBX_RESULT>(GP_CLI_COMMAND_PBX_COMMAND::Get, BoxNo, PItem, PostWorkNo, PChar->UContainer->GetItemsCount(), 0xB9);
             return;
+        }
+
+        // Gil past the stack size would be cut off and lost, so it stays in the box until the wallet has room
+        if (PItem->isType(ITEM_CURRENCY))
+        {
+            const CItem* PGil = PChar->getStorage(LOC_INVENTORY)->GetItem(0);
+            if (!PGil || static_cast<uint64>(PGil->getQuantity()) + PItem->getQuantity() > PGil->getStackSize())
+            {
+                PChar->pushPacket<GP_SERV_COMMAND_PBX_RESULT>(GP_CLI_COMMAND_PBX_COMMAND::Get, BoxNo, PItem, PostWorkNo, PChar->UContainer->GetItemsCount(), 0xB9);
+                return;
+            }
         }
 
         if (PItem->hasFlag(ItemFlag::Rare) && charutils::HasItem(PChar, PItem->getID()))
