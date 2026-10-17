@@ -177,7 +177,12 @@ local function goToHP(player, choice, index)
             return
         end
 
-        player:delGil(getCost(origin, index, hasKI))
+        -- The menu only greys out what the player cannot afford, so charge before moving.
+        local cost = getCost(origin, index, hasKI)
+        if cost > 0 and not player:delGil(cost) then
+            return
+        end
+
         player:setPos(unpack(homepointData[index].dest))
     end
 end

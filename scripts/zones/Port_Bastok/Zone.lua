@@ -59,7 +59,10 @@ zoneObject.onTriggerAreaLeave = function(player, triggerArea)
 end
 
 zoneObject.onTransportEvent = function(player, prevZoneId, transportName)
-    if not player:hasKeyItem(xi.keyItem.AIRSHIP_PASS) then
+    if
+        not player:hasKeyItem(xi.keyItem.AIRSHIP_PASS) or
+        not xi.transport.takeAirshipFare(player)
+    then
         player:startEvent(72)
         return
     end

@@ -278,3 +278,32 @@ xi.transport.onDockTimekeeperTrigger = function(player, npc)
 
     player:startEvent(eventId, timeLeft, schedule[scheduleStep].action, 0, schedule[scheduleStep].target)
 end
+
+-----------------------------------
+-- Airship fare
+-----------------------------------
+-- A departure gate takes the fare when its cutscene walks the player through, which is judged
+-- from the position the client reports, and the gate is no barrier on the server. So boarding
+-- checks the fare too: a player on the deck who has not paid at a gate since boarding last pays
+-- when the airship collects them, or is left ashore.
+xi.transport.airshipFare = 200
+
+xi.transport.payAirshipFareAtGate = function(player)
+    if player:delGil(xi.transport.airshipFare) then
+        player:setLocalVar('[Airship]FarePaid', 1)
+    end
+end
+
+-- Returns true when the player may board.
+xi.transport.takeAirshipFare = function(player)
+    if
+        player:getLocalVar('[Airship]FarePaid') == 0 and
+        not (player:getGil() >= xi.transport.airshipFare and player:delGil(xi.transport.airshipFare))
+    then
+        return false
+    end
+
+    player:setLocalVar('[Airship]FarePaid', 0)
+
+    return true
+end
