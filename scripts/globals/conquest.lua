@@ -1621,6 +1621,12 @@ xi.conquest.overseerOnEventFinish = function(player, csid, option, guardNation, 
 
     -- Homepoint -> Set.
     elseif option == 4 then
+        -- setHomePoint stores where the player stands, so they must still be within talk range (6 yalms) of this guard.
+        local guard = player:getEventTarget()
+        if guard == nil or player:checkDistance(guard) > 6 then
+            return
+        end
+
         if player:delGil(setHomepointFee(player, guardNation)) then
             player:setHomePoint()
             player:messageSpecial(mOffset + 94) -- 'Your home point has been set.'
