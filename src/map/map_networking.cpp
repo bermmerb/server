@@ -174,8 +174,11 @@ void MapNetworking::handle_incoming_packet(ByteSpan buffer, const IPP& ipp)
         std::swap(size, PSession->server_packet_size);
     }
 
-    // If client is logging out, just close it.
-    if (PSession->shuttingDown == 1)
+    // If client is logging out, close it once the 0x00B has gone out (send_parse drops PChar when it sends it).
+    // Not before: when this datagram's last server sync was stale, parse() only had the previous datagram resent,
+    // and closing now would lose the queued 0x00B (the client sees a lost connection, not a logout). A client that
+    // never answers again is closed by cleanupSessions, as last_update is not tapped while zoning.
+    if (PSession->shuttingDown == 1 && PSession->PChar == nullptr)
     {
         mapSessions_.destroySession(PSession);
     }
