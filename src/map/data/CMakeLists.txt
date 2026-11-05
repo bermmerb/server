@@ -28,15 +28,16 @@ add_data_dataset(ecosystems)
 add_data_dataset(merits)
 add_data_dataset(grades)
 add_data_dataset(monstrosity)
+add_data_dataset(skills)
 add_data_dataset(stats)
+add_data_dataset(experience)
 add_data_dataset(zones/settings)
 add_data_dataset(zones/npcs)
 add_data_dataset(zones/mobs)
 add_data_dataset(zones/regions)
 
-set(DATA_MAP_SOURCES
+target_sources(xi_map_battle PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/loader.h
-    PARENT_SCOPE
 )
 
 set(DATA_SCHEMA_SOURCES

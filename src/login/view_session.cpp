@@ -89,7 +89,7 @@ void view_session::read_func()
     const auto code = ref<uint8>(buffer_.data(), 8);
 
     const auto sessionHash = loginHelpers::getHashFromPacket(ipAddress, buffer_.data());
-    if (sessionHash == "")
+    if (sessionHash.empty())
     {
         ShowWarning(fmt::format("Session requested without valid sessionHash from {}", ipAddress));
         return;
@@ -237,6 +237,12 @@ void view_session::read_func()
                 data->addCharIntoCharInfo(charInfo);
             }
 
+            if (!session.requestedFriendPass.empty())
+            {
+                loginHelpers::useFriendPass(charInfo.ffxi_id, session.requestedFriendPass);
+                session.requestedFriendPass.clear();
+            }
+
             ShowInfo(fmt::format("char <{}> was successfully created on account {}", session.requestedNewCharacterName, session.accountID));
             session.requestedNewCharacterName.clear();
 
@@ -266,6 +272,8 @@ void view_session::read_func()
                 char CharName[PacketNameLength] = {};
                 std::memcpy(CharName, buffer_.data() + 32, PacketNameLength - 1);
 
+                const auto friendPass = asStringFromUntrustedSource(buffer_.data() + 0x50, 15);
+
                 if (const auto error = loginHelpers::characterCreationError(session.accountID, CharName))
                 {
                     loginHelpers::generateErrorMessage(buffer_.data(), *error);
@@ -274,8 +282,19 @@ void view_session::read_func()
                 }
                 else
                 {
+                    if (!friendPass.empty())
+                    {
+                        if (const auto passError = loginHelpers::friendPassError(session.accountID, friendPass))
+                        {
+                            loginHelpers::generateErrorMessage(buffer_.data(), *passError);
+                            do_write(0x24);
+                            return;
+                        }
+                    }
+
                     // copy charname
                     session.requestedNewCharacterName = CharName;
+                    session.requestedFriendPass       = friendPass;
 
                     std::memset(buffer_.data(), 0, 0x20);
                     buffer_.data()[0] = 0x20; // size
@@ -561,7 +580,7 @@ void view_session::do_write(const std::size_t length)
 
 void view_session::handle_error(std::error_code ec, std::shared_ptr<handler_session> self)
 {
-    if (self->sessionHash != "")
+    if (!self->sessionHash.empty())
     {
         auto& map = loginHelpers::getAuthenticatedSessions()[self->ipAddress];
         auto  it  = map.find(self->sessionHash);
